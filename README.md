@@ -14,7 +14,7 @@ Both directions work because of the **roundtrip**. Since the frontmatter is YAML
 
 ## What's here
 
-- **[[Vault-LD Specification - Linked Data in the Vault|The specification]]**: the normative reference. It defines how frontmatter becomes a knowledge graph (§4) and how any RDF graph round-trips through the vault format with full fidelity (§5), along with terminology, directory structure, and conformance criteria.
+- **[SPEC.md](SPEC.md)**: the normative reference. It defines how frontmatter becomes a knowledge graph (§4) and how any RDF graph round-trips through the vault format with full fidelity (§5), along with terminology, directory structure, and conformance criteria.
 - **`Vault-LD Example/`**: a complete, copyable vault that demonstrates every rule in the spec. It holds one ontology (`Culinary`), one controlled vocabulary (`Difficulty Levels`), and one instance (`hummus`), all sharing a single `context.jsonld`.
 
 ## A taste
