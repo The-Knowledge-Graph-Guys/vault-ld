@@ -10,7 +10,7 @@ This matters for anyone already invested in RDF-based ontologies. Your business 
 
 Both directions work because of the **roundtrip**. Since the frontmatter is YAML-LD, a note and an ontology definition are the *same kind of object*, and either can be projected losslessly to RDF and back. An ontology can enter as Turtle, be edited as Markdown, and leave as Turtle again, or the reverse, with no canonical "real" form privileged over the other.
 
-![[Vault-LD.png]]
+![Vault-LD](images/Vault-LD.png)
 
 ## What's here
 
