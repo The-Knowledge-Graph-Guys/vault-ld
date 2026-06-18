@@ -1,0 +1,23 @@
+{
+  "@context": {
+    "@base": "https://example.org/",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "sdo": "https://schema.org/",
+    "ex": "https://example.org/schema/",
+    "label": "rdfs:label",
+    "comment": "rdfs:comment",
+    "prefLabel": "skos:prefLabel",
+    "definition": "skos:definition",
+    "subClassOf":    { "@id": "rdfs:subClassOf",    "@type": "@id", "@container": "@set" },
+    "subPropertyOf": { "@id": "rdfs:subPropertyOf", "@type": "@id", "@container": "@set" },
+    "broader":       { "@id": "skos:broader",       "@type": "@id" },
+    "domain": { "@id": "rdfs:domain", "@type": "@id" },
+    "range":  { "@id": "rdfs:range",  "@type": "@id" },
+    "requiresIngredient": { "@id": "ex:requiresIngredient", "@type": "@id" },
+    "difficulty": { "@id": "ex:difficulty", "@type": "@id" },
+    "prepTimeMinutes": { "@id": "ex:prepTimeMinutes", "@type": "xsd:integer" }
+  }
+}
