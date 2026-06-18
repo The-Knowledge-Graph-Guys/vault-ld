@@ -40,4 +40,4 @@ You have just read these triples:
             :prepTimeMinutes 25 .
 ```
 
-The frontmatter is the graph; the body is prose for human and machine readers. One shared `context.jsonld` supplies the IRIs, datatypes, and prefixes, so authors write short, clean names while the semantics are supplied for them. See the [[Vault-LD Specification - Linked Data in the Vault|specification]] for the full rules.
+The frontmatter is the graph; the body is prose for human and machine readers. One shared `context.jsonld` supplies the IRIs, datatypes, and prefixes, so authors write short, clean names while the semantics are supplied for them. See the [Vault-LD Specification](SPEC.md) for the full rules.
