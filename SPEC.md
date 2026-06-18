@@ -2,7 +2,7 @@
 
 *An open format for knowledge two very different readers can share at once: a person editing notes, and a machine reasoning over a graph.*
 
-> For the motivation behind Vault-LD and a worked example, see the [[README]]. This document is the normative reference.
+> For the motivation behind Vault-LD and a worked example, see the [README](README.md). This document is the normative reference.
 
 ## 1. Overview
 
