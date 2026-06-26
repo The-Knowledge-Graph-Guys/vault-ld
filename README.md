@@ -15,7 +15,23 @@ Both directions work because of the **roundtrip**. Since the frontmatter is YAML
 ## What's here
 
 - **[SPEC.md](SPEC.md)**: the normative reference. It defines how frontmatter becomes a knowledge graph (§4) and how any RDF graph round-trips through the vault format with full fidelity (§5), along with terminology, directory structure, and conformance criteria.
-- **`Vault-LD Example/`**: a complete, copyable vault that demonstrates every rule in the spec. It holds one ontology (`Culinary`), one controlled vocabulary (`Difficulty Levels`), and one instance (`hummus`), all sharing a single `context.jsonld`.
+- **`Vault-LD Example/`**: a complete, copyable vault that demonstrates every rule in the spec. It holds one ontology (`Culinary`), one controlled vocabulary (`Difficulty Levels`), and one instance (`hummus`). Its root `context.jsonld` composes the Culinary ontology's own context, showing how multiple contexts compose (SPEC §4.2).
+- **`vault_to_rdf.py`**: a reference exporter that projects a vault to RDF — see [Exporting to RDF](#exporting-to-rdf) below.
+
+## Exporting to RDF
+
+The repo ships `vault_to_rdf.py`, a small Python tool that reads a vault and emits Turtle, split by layer into two files:
+
+- `schema.ttl` — the schema layer (classes, properties, concepts), each ontology in its own namespace (`cul:`, `diff:`, …),
+- `data.ttl` — the instance layer (typed notes) in the data namespace.
+
+It classifies each note by its folder, mints each subject under its ontology's `@base`, resolves frontmatter through the vault's composed `@context`, and flags anything it can't map rather than dropping it. Export the example vault to `build/` in one line:
+
+```sh
+pip install rdflib pyyaml && python vault_to_rdf.py "Vault-LD Example" --out-dir build
+```
+
+See **[EXPORT.md](EXPORT.md)** for the full usage guide, flags, and how layer classification and context composition work.
 
 ## A taste
 

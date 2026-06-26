@@ -1,0 +1,11 @@
+{
+  "@context": {
+    "@base": "https://example.org/culinary#",
+    "cul": "https://example.org/culinary#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+
+    "requiresIngredient": { "@id": "cul:requiresIngredient", "@type": "@id" },
+    "difficulty":         { "@id": "cul:difficulty",         "@type": "@id" },
+    "prepTimeMinutes":    { "@id": "cul:prepTimeMinutes",    "@type": "xsd:integer" }
+  }
+}

@@ -19,7 +19,7 @@ The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used in the se
 - **Vault**: the directory of Markdown files, opened as a knowledge base by a host tool (Obsidian, Notion, or any editor).
 - **Note / file**: one Markdown document. In linked-data terms it is one RDF *resource* (one subject).
 - **Frontmatter**: the YAML block delimited by `---` at the top of a note. Read as YAML-LD, it is the note's triples.
-- **Context**: the shared JSON-LD `@context` document (conventionally `context.jsonld`) that maps short field names and prefixes to IRIs for the whole vault.
+- **Context**: the shared JSON-LD `@context` that maps short field names and prefixes to IRIs for the whole vault. It is conventionally rooted in `context.jsonld`, but **MAY** be composed of several documents: a context value that is an *array* pulls in further context documents by reference (JSON-LD composition), so each ontology can ship its own self-contained context (§4.2).
 - **Vault format**: the resource-per-file representation, namely frontmatter triples (one subject per file) plus a documentation body.
 - **Schema layer / instance layer**: definitions (classes, properties, concepts) versus the typed notes that conform to them.
 - **Source of truth**: the serialization a given deployment designates as authoritative for an asset (Markdown, Turtle, or another). This is a per-asset, per-deployment choice, not fixed by this format.
@@ -27,12 +27,13 @@ The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used in the se
 
 ## 3. Structure at a Glance
 
-A vault is a tree of Markdown files plus one context document:
+A vault is a tree of Markdown files plus a composed context (a root document and one per ontology/vocabulary):
 
 ```
-context.jsonld                     # the shared @context - names and namespaces
+context.jsonld                     # the root @context - composes the contexts below
 Ontologies/
   Culinary/
+    context.jsonld                 # Culinary's own namespace (@base) + term definitions
     Culinary.md                    # the ontology resource (owl:Ontology)
     Classes/
       Recipe.md                    # owl:Class - subClassOf declared in frontmatter
@@ -43,15 +44,16 @@ Ontologies/
       prepTimeMinutes.md           # owl:DatatypeProperty
 Vocabularies/
   DifficultyLevels/
+    context.jsonld                 # the vocabulary's own namespace (@base)
     DifficultyLevels.md            # skos:ConceptScheme
     Beginner.md                    # skos:Concept - broader declared in frontmatter
 Recipes/
   hummus.md                        # an instance: "@type": "[[Recipe]]"
 ```
 
-The `Classes/` and `Properties/` folders are **flat**: they group resources by kind, not by hierarchy. A class's place in the `subClassOf` tree (and a concept's place in the `broader`/`narrower` tree) is declared in its frontmatter, not in its folder path. Folders are an organisational convenience and carry no formal meaning.
+The root `context.jsonld` carries the cross-cutting core (shared prefixes, the data `@base`, and the structural RDFS/OWL/SKOS terms) and *composes* each ontology's and vocabulary's own context by reference. Every ontology or vocabulary ships a `context.jsonld` beside its notes that declares its own namespace (`@base`) and any domain terms it coins (§4.2); a vocabulary whose predicates are all generic SKOS may declare only its `@base`. The `Classes/` and `Properties/` folders are **flat**: they group resources by kind, not by hierarchy. A class's place in the `subClassOf` tree (and a concept's place in the `broader`/`narrower` tree) is declared in its frontmatter, not in its folder path. Folders are an organisational convenience and carry no formal meaning.
 
-There is nothing else to install. The directory *is* the knowledge base, and it is self-describing: every name a file uses resolves through the one context document, which travels with the vault.
+There is nothing else to install. The directory *is* the knowledge base, and it is self-describing: every name a file uses resolves through the composed context, which travels with the vault.
 
 ## 4. Frontmatter as a Knowledge Graph
 
@@ -80,7 +82,7 @@ You have just read these triples:
 
 ### 4.2 The context is shared and external, by design
 
-A note **MUST NOT** carry its own `@context` block. The context lives once, in the vault's context document, and is the single source of truth for:
+A note **MUST NOT** carry its own `@context` block. The context lives *outside* the notes, and is the single source of truth for:
 
 - the **base namespace** (e.g. `https://example.org/`),
 - **prefix → namespace** mappings (`owl:`, `rdfs:`, `skos:`, `dcterms:`, `sdo:` for schema.org, and the local `ex:`),
@@ -88,7 +90,28 @@ A note **MUST NOT** carry its own `@context` block. The context lives once, in t
 
 So `prepTimeMinutes: 25` can be typed as `xsd:integer`, and `subClassOf` can be coerced to an IRI reference, *without* the author writing any of that. Authors write short, clean names; the context supplies the semantics. A name not present in the context is not part of the shared vocabulary; to make it first-class, add it to the context.
 
-This externalization is intentional: the model is defined in exactly one place, every file stays terse, and the vault remains diffable and human-scannable.
+This externalization is intentional: the model is defined outside the notes, every file stays terse, and the vault remains diffable and human-scannable.
+
+**The context MAY be composed of several documents.** Following JSON-LD's own mechanism, a context value that is an *array* applies its entries left-to-right, with later entries overriding earlier ones, and a string entry is a *reference* to another context document resolved relative to the document that names it. This lets the root `context.jsonld` hold the cross-cutting core — prefixes, `@base`, and the structural terms (`label`, `subClassOf`, `domain`, `broader`, …) — and then pull in each ontology's own self-contained context, exactly as a published ontology ships a `context.jsonld` defining its terms:
+
+```json
+{
+  "@context": [
+    { "@base": "https://example.org/", "owl": "…", "label": "rdfs:label", "subClassOf": { "@id": "rdfs:subClassOf", "@type": "@id" } },
+    "Ontologies/Culinary/context.jsonld",
+    "Vocabularies/DifficultyLevels/context.jsonld"
+  ]
+}
+```
+
+Each referenced ontology context also declares the **`@base` for its own namespace** — the scoped base its members are minted under (§4.5, §5.4):
+
+```json
+{ "@context": { "@base": "https://example.org/culinary#", "cul": "https://example.org/culinary#",
+                "requiresIngredient": { "@id": "cul:requiresIngredient", "@type": "@id" } } }
+```
+
+Composition is transparent to authors: every short name still resolves through one effective context, whichever file physically defines it. The benefit is modularity — an ontology owns its vocabulary *and its namespace*, the root merely lists the ontologies it composes — without giving any note a local `@context`.
 
 ### 4.3 The field-naming contract
 
@@ -114,7 +137,7 @@ A note **MAY** declare an explicit identity:
 "@id": https://example.org/recipes/hummus
 ```
 
-When `@id` is omitted, the resource's identity is its **file path**, resolved against the base namespace by convention. Most instance notes therefore need no identifier at all and remain addressable regardless. Schema resources such as classes, properties, and concepts are instead minted in the single schema namespace (see §5.4).
+When `@id` is omitted, the resource's identity is its **file name resolved against the `@base` of its namespace**, the way JSON-LD resolves a relative `@id`. Each ontology/vocabulary declares that `@base` in its own context (`https://example.org/culinary#` for Culinary), and instance notes resolve against the data base — so a class file `Recipe.md` becomes `cul:Recipe` and an instance `hummus.md` becomes `data:hummus` (§5.4). Only the file name participates, never the folder path. Most notes therefore need no identifier at all and remain addressable regardless. An explicit `@id` overrides this and pins a stable IRI that survives even a rename.
 
 #### Example: an instance with identity by file path
 
@@ -215,21 +238,34 @@ A consequence: the body lives only in the Markdown serialization and does not su
 
 An export tool walks the vault and emits Turtle. The transform is mechanical:
 
-1. Walk every `.md` file under the ontology/vocabulary folder.
-2. Resolve each short frontmatter field to its full predicate via the context.
-3. Convert each `[[Wiki link]]` to a `:LocalName` URI.
-4. Read `subClassOf` / `subPropertyOf` / `broader` from frontmatter (wiki links), like any other predicate; folder placement is ignored.
-5. Mint subject URIs in the single schema namespace (modular source folders are an editing convenience and **MUST NOT** introduce separate namespaces).
-6. Write standard `@prefix` headers and the triples.
+1. Walk every `.md` file and read its frontmatter.
+2. Resolve each short frontmatter field to its full predicate via the (composed) context.
+3. Convert each `[[Wiki link]]` to a full URI by resolving the target note's own identity.
+4. Read `subClassOf` / `subPropertyOf` / `broader` from frontmatter (wiki links), like any other predicate; folder placement is ignored for *hierarchy*.
+5. Decide each note's **layer from its folder**: notes under `Ontologies/` and `Vocabularies/` are the schema layer, everything else is the instance layer (§3, §5.1).
+6. Mint each subject by resolving the note's **file name against the `@base` of the namespace it belongs to**, exactly as JSON-LD resolves a relative `@id` (§4.5). Each ontology/vocabulary declares its own `@base` in its context (a *scoped base per ontology*: `https://example.org/culinary#` for Culinary, `https://example.org/difficulty#` for Difficulty Levels); instance notes resolve against the data base. The folder *path* never appears in the IRI — only the file name (= the resource name, §5.1) does, so moving a file between folders does not change its identity.
+7. Emit by **layer** to two Turtle files (`schema.ttl`, `data.ttl`) with standard `@prefix` headers. A layer may contain several ontology namespaces; cross-references (an instance's `@type`, a property's `domain`, a class's external alignment) simply carry the relevant prefix, so the files together are one graph.
 
-For `Recipe.md` the output is:
+For `Recipe.md` (Culinary ontology, schema layer) the output is:
 
 ```turtle
-@prefix : <https://example.org/schema/> .
-:Recipe a owl:Class ;
+@prefix cul: <https://example.org/culinary#> .
+cul:Recipe a owl:Class ;
     rdfs:label "Recipe" ;
     rdfs:comment "A set of instructions for preparing a dish." ;
-    rdfs:subClassOf :CreativeWork .
+    rdfs:subClassOf cul:CreativeWork , sdo:Recipe .
+```
+
+and the `hummus.md` instance (data layer) reaches across into the Culinary and Difficulty namespaces:
+
+```turtle
+@prefix cul:  <https://example.org/culinary#> .
+@prefix diff: <https://example.org/difficulty#> .
+@prefix data: <https://example.org/data/> .
+data:hummus a cul:Recipe ;
+    cul:requiresIngredient data:Chickpeas ;
+    cul:difficulty diff:Beginner ;
+    cul:prepTimeMinutes 25 .
 ```
 
 This is the export direction *when Markdown is the designated source of truth*, the common case for human-curated wikis and a common convention. In that arrangement the generated `.ttl` (and any derived overview/diagram artifacts) are **read-only**: tools and authors **MUST** edit the source `.md` files and regenerate, never patch the export. But the direction is a deployment choice, not a law of the format: where Turtle is the source of truth (§5.5, e.g. a SHACL-rich ontology), the Markdown is the generated, read-only side instead. The rule is "do not edit the generated face," whichever face that is.
@@ -281,31 +317,59 @@ This format does not invent a data model. It composes existing ones and chooses 
 - **SKOS** supplies controlled vocabularies; concept schemes and concepts are stored as ordinary notes like everything else.
 - **Wiki links**, native to Obsidian and Notion, are reused as the IRI-reference mechanism, which is what makes the same files navigable by hand.
 
-The format's only original move is insisting that all of these share one directory and one context so that a graph can be read, edited, and handed on without any of them being privileged over the others.
+The format's only original move is insisting that all of these share one directory and one effective context (composed from however many documents) so that a graph can be read, edited, and handed on without any of them being privileged over the others.
 
 ## Appendix A: A Minimal Example Bundle
 
 A complete, copyable vault with one ontology, one vocabulary, and one instance.
 
-**`context.jsonld`**
+**`context.jsonld`** — the root context: the cross-cutting core, then references composing each ontology's and vocabulary's own context (§4.2).
+```json
+{
+  "@context": [
+    {
+      "@base": "https://example.org/",
+      "owl": "http://www.w3.org/2002/07/owl#",
+      "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+      "skos": "http://www.w3.org/2004/02/skos/core#",
+      "xsd": "http://www.w3.org/2001/XMLSchema#",
+      "sdo": "https://schema.org/",
+      "label": "rdfs:label",
+      "comment": "rdfs:comment",
+      "prefLabel": "skos:prefLabel",
+      "definition": "skos:definition",
+      "subClassOf":    { "@id": "rdfs:subClassOf",    "@type": "@id", "@container": "@set" },
+      "subPropertyOf": { "@id": "rdfs:subPropertyOf", "@type": "@id", "@container": "@set" },
+      "broader":       { "@id": "skos:broader",       "@type": "@id" },
+      "domain": { "@id": "rdfs:domain", "@type": "@id" },
+      "range":  { "@id": "rdfs:range",  "@type": "@id" }
+    },
+    "Ontologies/Culinary/context.jsonld",
+    "Vocabularies/DifficultyLevels/context.jsonld"
+  ]
+}
+```
+
+**`Ontologies/Culinary/context.jsonld`** — the ontology's own vocabulary *and* namespace (`@base`).
 ```json
 {
   "@context": {
-    "@base": "https://example.org/",
-    "owl": "http://www.w3.org/2002/07/owl#",
-    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "@base": "https://example.org/culinary#",
+    "cul": "https://example.org/culinary#",
     "xsd": "http://www.w3.org/2001/XMLSchema#",
-    "sdo": "https://schema.org/",
-    "ex": "https://example.org/schema/",
-    "label": "rdfs:label",
-    "comment": "rdfs:comment",
-    "subClassOf":    { "@id": "rdfs:subClassOf",    "@type": "@id", "@container": "@set" },
-    "subPropertyOf": { "@id": "rdfs:subPropertyOf", "@type": "@id", "@container": "@set" },
-    "broader":       { "@id": "skos:broader",       "@type": "@id" },
-    "domain": { "@id": "rdfs:domain", "@type": "@id" },
-    "range":  { "@id": "rdfs:range",  "@type": "@id" },
-    "prepTimeMinutes": { "@id": "ex:prepTimeMinutes", "@type": "xsd:integer" }
+    "requiresIngredient": { "@id": "cul:requiresIngredient", "@type": "@id" },
+    "difficulty":         { "@id": "cul:difficulty",         "@type": "@id" },
+    "prepTimeMinutes":    { "@id": "cul:prepTimeMinutes",    "@type": "xsd:integer" }
+  }
+}
+```
+
+**`Vocabularies/DifficultyLevels/context.jsonld`** — the vocabulary's namespace; its predicates (`prefLabel`, `definition`, `broader`) are the generic SKOS terms from the core.
+```json
+{
+  "@context": {
+    "@base": "https://example.org/difficulty#",
+    "diff": "https://example.org/difficulty#"
   }
 }
 ```
@@ -360,4 +424,4 @@ prepTimeMinutes: 25
 A smooth purée of chickpeas, tahini, lemon, and garlic.
 ```
 
-Five files, one context, no server, and a graph you can read with your eyes or export to Turtle on demand.
+A handful of notes, a composed context, no server, and a graph you can read with your eyes or export to Turtle on demand.

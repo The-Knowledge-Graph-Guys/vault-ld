@@ -1,0 +1,6 @@
+{
+  "@context": {
+    "@base": "https://example.org/difficulty#",
+    "diff": "https://example.org/difficulty#"
+  }
+}
