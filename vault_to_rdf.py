@@ -28,8 +28,19 @@ import sys
 from pathlib import Path
 
 import yaml
+from urllib.parse import quote
+
 from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF
+
+# Host-editor keys are affordances of the editing surface, not triples
+# (SPEC §4.3): never emitted, never warned about.
+HOST_KEYS = {"tags", "aliases", "cssclasses"}
+
+
+def iri_safe(name: str) -> str:
+    """Percent-encode characters not legal in an IRI local part (SPEC §4.5)."""
+    return quote(name, safe="")
 
 # ---------------------------------------------------------------------------
 # Folder structure decides the layer (SPEC §3, §5.1): the schema layer lives
@@ -172,7 +183,17 @@ def is_wikilink(token) -> bool:
 
 
 def wikilink_name(token: str) -> str:
-    return token.strip()[2:-2].strip()
+    """Reduce a wiki link to the note name it resolves by (SPEC §4.4.1).
+
+    [[name|alias]]   -> alias is display-only, ignored
+    [[name#Heading]] -> a fragment addresses a location, not a resource
+    [[path/to/name]] -> a path only disambiguates; resolution is by note name
+    """
+    inner = token.strip()[2:-2]
+    inner = inner.split("|", 1)[0]
+    inner = inner.split("#", 1)[0]
+    inner = inner.rsplit("/", 1)[-1]
+    return inner.strip()
 
 
 def locate(path: Path, vault: Path) -> tuple[str, set[str] | None]:
@@ -277,12 +298,12 @@ def main() -> int:
         if "@id" in fm:
             return URIRef(ctx.expand_curie(str(fm["@id"])))
         if layer == "data":
-            return URIRef(DATA[path.stem])
-        # schema layer: resolve the file name against the ontology's @base,
-        # exactly as JSON-LD resolves a relative @id (SPEC §4.5, §5.4).
+            return URIRef(DATA[iri_safe(path.stem)])
+        # schema layer: resolve the file name against the ontology's scoped
+        # @base (SPEC §4.2 deviation note, §4.5, §5.4).
         gov_path, name = governing(path, vault)
         base = base_for(gov_path, name)
-        return URIRef(base + path.stem)
+        return URIRef(base + iri_safe(path.stem))
 
     # ---- Pass 1b: mint each subject and index it by note name.
     notes: list[tuple[Path, dict, str, URIRef]] = []
@@ -290,6 +311,10 @@ def main() -> int:
     for path, fm, layer, expected in discovered:
         subj = subject_iri(path, fm, layer)
         notes.append((path, fm, layer, subj))
+        if path.stem in subject_by_name and subject_by_name[path.stem] != subj:
+            warnings.append(f"ambiguous note name '{path.stem}': multiple participating "
+                            f"notes share it; bare wiki links to it may resolve wrongly "
+                            f"(disambiguate with a path-qualified link or an explicit @id)")
         subject_by_name[path.stem] = subj
 
         # Error bound: a schema-folder note must carry an acceptable @type.
@@ -313,7 +338,7 @@ def main() -> int:
             iri = subject_by_name.get(name)
             if iri is None:
                 warnings.append(f"dangling wiki link [[{name}]] -> minted in data namespace")
-                return URIRef(DATA[name])
+                return URIRef(DATA[iri_safe(name)])
             return iri
         return URIRef(ctx.expand_curie(token))
 
@@ -336,6 +361,9 @@ def main() -> int:
             if key == "@type":
                 for v in values:
                     g.add((subj, RDF.type, resolve_iri(str(v))))
+                continue
+
+            if key in HOST_KEYS:
                 continue
 
             term = ctx.terms.get(key)

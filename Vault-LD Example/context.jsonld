@@ -15,6 +15,8 @@
       "subClassOf":    { "@id": "rdfs:subClassOf",    "@type": "@id", "@container": "@set" },
       "subPropertyOf": { "@id": "rdfs:subPropertyOf", "@type": "@id", "@container": "@set" },
       "broader":       { "@id": "skos:broader",       "@type": "@id" },
+      "topConceptOf":  { "@id": "skos:topConceptOf",  "@type": "@id" },
+      "inScheme":      { "@id": "skos:inScheme",      "@type": "@id" },
       "domain": { "@id": "rdfs:domain", "@type": "@id" },
       "range":  { "@id": "rdfs:range",  "@type": "@id" }
     },
