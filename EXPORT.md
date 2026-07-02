@@ -112,13 +112,18 @@ The tool prints warnings to stderr instead of dropping anything silently
   minted, in the data namespace);
 - a referenced context file is **missing** or **remote**;
 - two participating notes **share a file name**, making bare wiki links to that
-  name ambiguous (SPEC §4.4.1).
+  name ambiguous (SPEC §4.4.1) — or mint the **same IRI**, silently merging
+  into one subject;
+- two composed contexts define the **same term or prefix differently** — the
+  later definition wins (SPEC §4.2); an identical re-declaration stays silent.
 
 Host-editor keys (`tags`, `aliases`, `cssclasses`) are skipped **silently**:
 they are affordances of the editing surface, not unmapped constructs
 (SPEC §4.3). Wiki links are resolved per the SPEC §4.4.1 grammar: aliases
 (`[[name|shown]]`) and fragments (`[[name#Heading]]`) are stripped, and a
-path-qualified link (`[[path/to/name]]`) resolves by its final segment.
+path-qualified link (`[[path/to/name]]`) selects among same-named notes by
+matching its path against each note's vault-relative path (right-aligned on
+segment boundaries, the way Obsidian's shortest-sufficient-path links work).
 
 ## Example output
 

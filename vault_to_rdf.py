@@ -68,6 +68,12 @@ EXPECTED_SCHEME = {SKOS + "ConceptScheme"}
 EXPECTED_CONCEPT = {SKOS + "Concept"}
 
 
+def _def_form(d):
+    """A term definition in its expanded dict form, so the compact string form
+    compares equal to its equivalent object ("rdfs:label" == {"@id": "rdfs:label"})."""
+    return d if isinstance(d, dict) else {"@id": d}
+
+
 def merge_context(node, base_dir: Path, seen: set[Path], warnings: list[str]) -> dict:
     """Resolve a JSON-LD `@context` value into one flat mapping.
 
@@ -77,13 +83,28 @@ def merge_context(node, base_dir: Path, seen: set[Path], warnings: list[str]) ->
     are resolved as file paths relative to the document that names them, so each
     ontology can ship its own self-contained context (as published ontologies
     do) and the root context simply lists the ones it composes.
+
+    A later entry that redefines a term or prefix with a *different* definition
+    is flagged (SPEC §4.2): legal JSON-LD, but across independently authored
+    ontologies it is almost always an accidental collision. An identical
+    re-declaration (self-contained contexts re-declaring common prefixes) is
+    benign and stays silent.
     """
     merged: dict = {}
     if isinstance(node, dict):
         merged.update(node)
     elif isinstance(node, list):
         for entry in node:
-            merged.update(merge_context(entry, base_dir, seen, warnings))
+            sub = merge_context(entry, base_dir, seen, warnings)
+            src = entry if isinstance(entry, str) else "an inline context"
+            for key, val in sub.items():
+                if key.startswith("@") or key not in merged:
+                    continue
+                if _def_form(merged[key]) != _def_form(val):
+                    warnings.append(f"context shadowing: '{key}' redefined with a "
+                                    f"different definition by {src} — the later "
+                                    f"definition wins (SPEC §4.2)")
+            merged.update(sub)
     elif isinstance(node, str):
         if node.startswith("http://") or node.startswith("https://"):
             warnings.append(f"remote context not fetched: {node}")
@@ -182,18 +203,23 @@ def is_wikilink(token) -> bool:
     return isinstance(token, str) and token.strip().startswith("[[") and token.strip().endswith("]]")
 
 
-def wikilink_name(token: str) -> str:
-    """Reduce a wiki link to the note name it resolves by (SPEC §4.4.1).
+def wikilink_target(token: str) -> str:
+    """The resolvable target of a wiki link (SPEC §4.4.1): alias and fragment
+    stripped, any disambiguating path kept.
 
     [[name|alias]]   -> alias is display-only, ignored
     [[name#Heading]] -> a fragment addresses a location, not a resource
-    [[path/to/name]] -> a path only disambiguates; resolution is by note name
     """
     inner = token.strip()[2:-2]
     inner = inner.split("|", 1)[0]
     inner = inner.split("#", 1)[0]
-    inner = inner.rsplit("/", 1)[-1]
     return inner.strip()
+
+
+def wikilink_name(token: str) -> str:
+    """Reduce a wiki link to its bare note name (SPEC §4.4.1): the path, when
+    present, only selects among same-named notes; the name is the final segment."""
+    return wikilink_target(token).rsplit("/", 1)[-1]
 
 
 def locate(path: Path, vault: Path) -> tuple[str, set[str] | None]:
@@ -305,16 +331,31 @@ def main() -> int:
         base = base_for(gov_path, name)
         return URIRef(base + iri_safe(path.stem))
 
-    # ---- Pass 1b: mint each subject and index it by note name.
+    # ---- Pass 1b: mint each subject and index it by note name AND by
+    # vault-relative path, so a path-qualified link can select among
+    # same-named notes (SPEC §4.4.1).
     notes: list[tuple[Path, dict, str, URIRef]] = []
     subject_by_name: dict[str, URIRef] = {}
+    subject_by_relpath: dict[str, URIRef] = {}
+    first_by_name: dict[str, tuple[Path, URIRef]] = {}
     for path, fm, layer, expected in discovered:
         subj = subject_iri(path, fm, layer)
         notes.append((path, fm, layer, subj))
-        if path.stem in subject_by_name and subject_by_name[path.stem] != subj:
-            warnings.append(f"ambiguous note name '{path.stem}': multiple participating "
-                            f"notes share it; bare wiki links to it may resolve wrongly "
-                            f"(disambiguate with a path-qualified link or an explicit @id)")
+        rel = path.relative_to(vault).with_suffix("").as_posix()
+        subject_by_relpath[rel] = subj
+        if path.stem in first_by_name:
+            prev_path, prev_subj = first_by_name[path.stem]
+            if prev_subj != subj:
+                warnings.append(f"ambiguous note name '{path.stem}' "
+                                f"({prev_path.relative_to(vault)}, {path.relative_to(vault)}): "
+                                f"bare wiki links to it resolve unpredictably — use a "
+                                f"path-qualified link or an explicit @id")
+            else:
+                warnings.append(f"notes {prev_path.relative_to(vault)} and "
+                                f"{path.relative_to(vault)} mint the same IRI <{subj}> — "
+                                f"they will merge into one subject")
+        else:
+            first_by_name[path.stem] = (path, subj)
         subject_by_name[path.stem] = subj
 
         # Error bound: a schema-folder note must carry an acceptable @type.
@@ -332,9 +373,24 @@ def main() -> int:
                                     f"(expected one of {sorted(expected)})")
 
     def resolve_iri(token: str) -> URIRef:
-        """Resolve a wiki link or CURIE/IRI value to a full IRI."""
+        """Resolve a wiki link or CURIE/IRI value to a full IRI (SPEC §4.4.1):
+        a path-qualified link selects among same-named notes by matching its
+        path against the note's vault-relative path, right-aligned on segment
+        boundaries (the way Obsidian's shortest-sufficient-path links work)."""
         if is_wikilink(token):
-            name = wikilink_name(token)
+            target = wikilink_target(token)
+            name = target.rsplit("/", 1)[-1]
+            if "/" in target:
+                hits = {iri for rel, iri in subject_by_relpath.items()
+                        if rel == target or rel.endswith("/" + target)}
+                if len(hits) == 1:
+                    return hits.pop()
+                if hits:
+                    warnings.append(f"wiki link [[{target}]] is ambiguous even with "
+                                    f"its path — {len(hits)} notes match")
+                    return sorted(hits)[0]
+                warnings.append(f"path in [[{target}]] matches no participating note "
+                                f"— resolved by note name instead")
             iri = subject_by_name.get(name)
             if iri is None:
                 warnings.append(f"dangling wiki link [[{name}]] -> minted in data namespace")

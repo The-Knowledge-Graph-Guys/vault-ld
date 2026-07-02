@@ -284,12 +284,17 @@ def classify(type_iris: set[str]) -> str:
 
 
 def scan_existing_notes(vault: Path, ctx: Context, data_ns: str,
-                        warnings: list[str]) -> dict[str, tuple[Path, str]]:
-    """Map every existing note's stem to (path, subject IRI), minting identity
-    exactly as the forward direction does (SPEC §4.5)."""
-    notes: dict[str, tuple[Path, str]] = {}
+                        warnings: list[str]) -> dict[str, Path]:
+    """Map every existing note's subject IRI to its path, minting identity
+    exactly as the forward direction does (SPEC §4.5).
+
+    Notes are keyed by IRI, not by name: two notes may legitimately share a
+    file name (links to them are emitted path-qualified, SPEC §4.4.1), but two
+    notes identifying the same subject would race for one update — the first
+    wins and the duplicate is flagged."""
+    by_iri: dict[str, Path] = {}
     if not vault.exists():
-        return notes
+        return by_iri
     for path in sorted(vault.rglob("*.md")):
         fm = parse_frontmatter(path) or {}
         layer, _ = locate(path, vault)
@@ -301,11 +306,12 @@ def scan_existing_notes(vault: Path, ctx: Context, data_ns: str,
             gov, name = governing(path, vault)
             base = context_base(gov.parent / "context.jsonld", warnings) or ""
             iri = base + path.stem
-        if path.stem in notes:
-            warnings.append(f"duplicate note name '{path.stem}' in vault "
-                            f"({notes[path.stem][0]} and {path}) — wiki links are ambiguous")
-        notes[path.stem] = (path, iri)
-    return notes
+        if iri in by_iri:
+            warnings.append(f"notes {by_iri[iri]} and {path} both identify <{iri}> "
+                            f"— updates go to the former")
+            continue
+        by_iri[iri] = path
+    return by_iri
 
 
 def main() -> int:
@@ -434,14 +440,37 @@ def main() -> int:
         ns_to_folder[ns] = folder
         return folder
 
-    # ---- Existing notes: stem -> (path, IRI). Structure preservation and
+    # ---- Existing notes: subject IRI -> path. Structure preservation and
     # wiki-link resolution both key off this.
-    existing = scan_existing_notes(vault, ctx, data_ns, warnings)
+    existing_by_iri = scan_existing_notes(vault, ctx, data_ns, warnings)
+    existing_path_iri = {p: i for i, p in existing_by_iri.items()}
 
     # ---- Assign each subject a path (existing note wins) and a stem.
+    # Two subjects may share a note *name* (links to them go path-qualified,
+    # SPEC §4.4.1) but never one *file*: a canonical path already claimed by a
+    # different subject gets a suffixed name, pinned by an explicit @id.
     note_path: dict[str, Path] = {}
     note_stem: dict[str, str] = {}
     folder_members: dict[tuple[str, str], list[str]] = {}
+    claimed: dict[Path, str] = {}
+
+    def taken_by_other(path: Path, iri: str) -> bool:
+        if path in claimed:
+            return claimed[path] != iri
+        if path.exists():
+            return existing_path_iri.get(path, iri) != iri
+        return False
+
+    def free_path(path: Path, iri: str) -> Path:
+        base, i = path, 2
+        while taken_by_other(path, iri):
+            path = base.with_name(f"{base.stem}-{i}{base.suffix}")
+            i += 1
+        if path != base:
+            warnings.append(f"file collision: {base.relative_to(vault)} already "
+                            f"belongs to another subject — {iri} stored as "
+                            f"'{path.stem}' with an explicit @id")
+        return path
 
     for s in subjects:
         iri = str(s)
@@ -451,43 +480,59 @@ def main() -> int:
             local = iri[len(data_ns):]
         stem = sanitize_stem(local) if local else derive_folder_name(ns)
 
-        if stem in existing and existing[stem][1] != iri:
-            warnings.append(f"name collision: '{stem}' already names {existing[stem][1]} "
-                            f"— {iri} stored as '{stem}-2' with an explicit @id")
-            stem = stem + "-2"
-
-        if stem in existing:
-            path = existing[stem][0]
+        if iri in existing_by_iri:
+            path = existing_by_iri[iri]
             folder = None
         elif kind == "instance":
             type_stems = sorted(
                 split_iri(t)[1] for t in types_of[s] if split_iri(t)[1])
             folder_name = pluralize(sanitize_stem(type_stems[0])) if type_stems else "Resources"
-            path = vault / folder_name / f"{stem}.md"
+            path = free_path(vault / folder_name / f"{stem}.md", iri)
             folder = None
         else:
             kind_dir, name = folder_for(s)
             sub = {"class": "Classes", "property": "Properties"}.get(kind)
             if kind in ("ontology", "scheme"):
                 path = vault / kind_dir / name / f"{name}.md"
-                stem = name
             elif kind_dir == "Ontologies" and sub:
                 path = vault / kind_dir / name / sub / f"{stem}.md"
             else:
                 path = vault / kind_dir / name / f"{stem}.md"
+            path = free_path(path, iri)
             folder = (kind_dir, name)
 
+        claimed[path] = iri
         if kind != "instance" and folder is not None:
             folder_members.setdefault(folder, []).append(ns)
         note_path[iri] = path
-        note_stem[iri] = stem
+        note_stem[iri] = path.stem
         if not types_of[s]:
             warnings.append(f"{path.name}: subject {iri} has no rdf:type — "
                             f"the note will be skipped by a forward export")
 
     # Wiki-link resolution: every note in the vault after this run.
-    note_by_iri = {iri: stem for stem, (path, iri) in existing.items()}
+    note_by_iri = {iri: p.stem for iri, p in existing_by_iri.items()}
     note_by_iri.update(note_stem)
+    path_by_iri = dict(existing_by_iri)
+    path_by_iri.update(note_path)
+
+    # Generation half of the SPEC §4.4.1 contract: when several notes share a
+    # name, a bare [[name]] is ambiguous, so emit the path-qualified form the
+    # forward direction resolves by.
+    stem_iris: dict[str, set[str]] = {}
+    for iri_, stem_ in note_by_iri.items():
+        stem_iris.setdefault(stem_, set()).add(iri_)
+
+    def link_for(iri: str) -> str | None:
+        stem = note_by_iri.get(iri)
+        if stem is None:
+            return None
+        if len(stem_iris[stem]) > 1 and iri in path_by_iri:
+            rel = path_by_iri[iri].relative_to(vault).with_suffix("").as_posix()
+            warnings.append(f"note name '{stem}' is ambiguous — linking to it "
+                            f"path-qualified as [[{rel}]] (SPEC §4.4.1)")
+            return f"[[{rel}]]"
+        return f"[[{stem}]]"
 
     # ---- Ensure each schema folder has a context.jsonld declaring its @base,
     # and that the root context composes it (SPEC §4.2). New folder contexts
@@ -559,8 +604,7 @@ def main() -> int:
             if coercion != "@id":
                 warnings.append(f"IRI object {curie(iri)} through a term without @id "
                                 f"coercion — will export as a string literal")
-            stem = note_by_iri.get(iri)
-            return f"[[{stem}]]" if stem else curie(iri)
+            return link_for(iri) or curie(iri)
         lit: Literal = obj
         if lit.language:
             warnings.append(f"language tag @{lit.language} on '{lit}' dropped — "
@@ -626,9 +670,7 @@ def main() -> int:
         elif "@id" in old_fm and ctx.expand_curie(str(old_fm["@id"])) == iri:
             new_fm["@id"] = old_fm["@id"]  # a valid explicit pin — keep it
 
-        type_vals = sorted(
-            (f"[[{note_by_iri[t]}]]" if t in note_by_iri else curie(t))
-            for t in types_of[s])
+        type_vals = sorted(link_for(t) or curie(t) for t in types_of[s])
         if type_vals:
             new_fm["@type"] = type_vals[0] if len(type_vals) == 1 else type_vals
 

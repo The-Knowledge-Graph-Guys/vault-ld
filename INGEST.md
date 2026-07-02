@@ -88,7 +88,9 @@ The correspondences of §5.5, read right-to-left from the export:
   to the context** — to the ontology's own `context.jsonld` when the predicate
   lives in that namespace, to the root context otherwise (flagged as a warning);
 - IRI objects become **`[[wiki links]]`** when the target is a note in the vault
-  (before or after this run), and **CURIEs** otherwise (`sdo:Recipe`);
+  (before or after this run), and **CURIEs** otherwise (`sdo:Recipe`); when
+  several notes share the target's name, the link is written **path-qualified**
+  (`[[Ingredients/Chickpeas]]`) so it resolves unambiguously (SPEC §4.4.1);
 - literals become **plain scalars**; datatypes are supplied by the context's
   coercions, never written inline. Integers, booleans, doubles, dates and
   dateTimes round-trip natively; other datatypes get a coercion added to the

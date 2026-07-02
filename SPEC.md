@@ -118,7 +118,7 @@ Composition is transparent to authors: every short name still resolves through o
 >
 > One interoperability consequence must be stated plainly: JSON-LD 1.1 directs a processor to **ignore `@base` in a referenced context** — the keyword only takes effect in a document's own inline context, or as a processing option. The `@base` entries in the folder contexts are therefore read by Vault-LD tools, not by generic JSON-LD processors. A stock processor given the composed context and a note's raw frontmatter resolves every *term* identically, but resolves relative subject IRIs against the root's base, not the folder's. Reproducing the vault's subject IRIs requires the assembly rule — equivalently, calling an off-the-shelf JSON-LD library with the composed context as the expansion context and the governing folder's `@base` as the `base` option, after the wiki-link resolution of §4.4.1, which no JSON-LD option supplies.
 
-When composing contexts, a tool **SHOULD** warn if a later context redefines a term or prefix an earlier one already defined: JSON-LD's override semantics make the shadowing legal, but across independently authored ontologies it is almost always an accidental name collision, and it is silent by default.
+When composing contexts, a tool **SHOULD** warn if a later context redefines a term or prefix **with a different definition than** one an earlier context already established: JSON-LD's override semantics make the shadowing legal, but across independently authored ontologies a *conflicting* redefinition is almost always an accidental name collision, and it is silent by default. An identical re-declaration — the normal signature of self-contained ontology contexts, which re-declare the common prefixes they use — is benign and warrants no warning.
 
 ### 4.3 The field-naming contract
 
@@ -149,6 +149,8 @@ A wiki link is `[[name]]`, optionally carrying a path (`[[path/to/name]]`), an a
 - a **fragment** addresses a location inside a note, not a resource; the graph edge resolves to the note itself, and a tool **MAY** warn that the fragment was discarded.
 
 A link resolves to the participating note whose file name equals the link's note name, and the object IRI is that note's identity: its explicit `@id` when declared, its minted IRI otherwise (§4.5). Two participating notes sharing a file name make bare links to that name ambiguous; a tool **MUST** warn, and authors **SHOULD** disambiguate with a path-qualified link or an explicit `@id`. A link that names no participating note is **dangling**: a tool **MUST** flag it (§5.6) and **MAY** still mint an IRI for the missing target in the data namespace so the edge is preserved rather than dropped.
+
+The same grammar governs link *generation*. A tool that writes wiki links (§5.5) **SHOULD** emit a path-qualified link whenever the bare note name is ambiguous among participating notes, so that the link it writes resolves — under the rules above — to the note it means. Generation and resolution are two halves of one contract: whatever one tool emits, the other must resolve back to the same IRI.
 
 A note with no frontmatter, or whose frontmatter lacks `@type`, does **not** participate in the graph; it is an ordinary document. A link from a participating note to such a note is dangling in the sense above, even though the file exists and the link navigates perfectly well in the host tool.
 
