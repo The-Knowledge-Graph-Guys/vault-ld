@@ -4,7 +4,7 @@
 
 ## RDF in the Vault
 
-Karpathy's "LLM wiki" idea points at something real: a directory of plain Markdown notes is one of the most powerful ways to work with LLMs. It is readable by you, chunkable by a model, and diffable in git, with no database required. The YAML frontmatter at the centre of this approach carries a hidden pattern: it can map onto [YAML-LD](https://json-ld.github.io/yaml-ld/spec/) (JSON-LD with a YAML serialization). Resolve that frontmatter through one shared context and your notes stop being tagged text. They become linked data.
+[Karpathy's "LLM wiki" idea](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) points at something real: a directory of plain Markdown notes is one of the most powerful ways to work with LLMs. It is readable by you, chunkable by a model, and diffable in git, with no database required. The YAML frontmatter at the centre of this approach carries a hidden pattern: it can map onto [YAML-LD](https://json-ld.github.io/yaml-ld/spec/) (JSON-LD with a YAML serialization). Resolve that frontmatter through one shared context and your notes stop being tagged text. They become linked data.
 
 This matters for anyone already invested in RDF-based ontologies. Your business semantics (your classes, properties, and controlled vocabularies) drop straight into the wiki your team already uses, much as [schema.org](https://schema.org) gave web pages a shared vocabulary without asking authors to leave HTML. The benefit runs both ways: business semantics arrive *inside* the wiki, and the ontology gains a human-friendly surface, where classes and properties can be read and edited as notes rather than as raw Turtle.
 
