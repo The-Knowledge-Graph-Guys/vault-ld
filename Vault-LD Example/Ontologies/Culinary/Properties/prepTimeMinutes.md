@@ -1,5 +1,5 @@
 ---
-"@type": owl:DatatypeProperty
+type: owl:DatatypeProperty
 label: prep time minutes
 comment: "Preparation time for a recipe, in whole minutes."
 domain: [ "[[Recipe]]" ]

@@ -1,5 +1,5 @@
 ---
-"@type": skos:ConceptScheme
+type: skos:ConceptScheme
 prefLabel: Difficulty Levels
 definition: "A controlled vocabulary describing how hard a recipe is to make."
 tags: [ skos-scheme, DifficultyLevels ]

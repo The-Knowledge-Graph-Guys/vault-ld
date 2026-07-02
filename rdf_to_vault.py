@@ -56,6 +56,7 @@ from vault_to_rdf import (
     RDFS,
     SKOS,
     Context,
+    canonical_keywords,
     context_base,
     governing,
     iri_safe,
@@ -86,6 +87,8 @@ def core_context(data_ns: str) -> dict:
     """The cross-cutting core for a synthesized root context (SPEC Appendix A)."""
     return {
         "@base": data_ns,
+        "type": "@type",
+        "id": "@id",
         "owl": OWL,
         "rdfs": RDFS,
         "skos": SKOS,
@@ -301,7 +304,7 @@ def scan_existing_notes(vault: Path, ctx: Context, data_ns: str,
     if not vault.exists():
         return by_iri
     for path in sorted(vault.rglob("*.md")):
-        fm = parse_frontmatter(path) or {}
+        fm = canonical_keywords(parse_frontmatter(path) or {}, ctx)
         layer, _ = locate(path, vault)
         if "@id" in fm:
             iri = ctx.expand_curie(str(fm["@id"]))
@@ -645,6 +648,14 @@ def main() -> int:
     canon = {k: i for i, k in enumerate(["@id", "@type", *ctx.terms])}
     created = updated = unchanged = 0
 
+    # Notes are compared and merged in the canonical "@type"/"@id" spelling,
+    # but written under the context-declared aliases when there are any
+    # (SPEC §4.3) — type:/id: keys need no YAML quoting.
+    alias_of = {kw: alias for alias, kw in ctx.aliases.items()}
+
+    def spelled(fm: dict) -> dict:
+        return {alias_of.get(k, k): v for k, v in fm.items()}
+
     for s in subjects:
         iri = str(s)
         path, stem = note_path[iri], note_stem[iri]
@@ -658,7 +669,7 @@ def main() -> int:
             body = old_text.split("---", 2)[2]
         else:
             body = "\n"
-        old_fm = old_fm or {}
+        old_fm = canonical_keywords(old_fm or {}, ctx)
 
         # explicit @id whenever file-name minting (SPEC §4.5, as the forward
         # direction performs it — percent-encoded) would not reproduce the
@@ -707,7 +718,7 @@ def main() -> int:
             unchanged += 1
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(emit_frontmatter(final) + body, encoding="utf-8")
+        path.write_text(emit_frontmatter(spelled(final)) + body, encoding="utf-8")
         created, updated = created + (not old_text), updated + bool(old_text)
 
     # ---- Any prefix used in a note must resolve through the context.

@@ -1,5 +1,5 @@
 ---
-"@type": owl:Class
+type: owl:Class
 label: Ingredient
 comment: "A foodstuff that a recipe depends on."
 tags: [ owl-class, Culinary ]

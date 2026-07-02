@@ -125,6 +125,9 @@ constructs (SPEC §4.3). A deployment that maps one in the context has
 path-qualified link (`[[path/to/name]]`) selects among same-named notes by
 matching its path against each note's vault-relative path (right-aligned on
 segment boundaries, the way Obsidian's shortest-sufficient-path links work).
+Keyword aliases declared in the context (`type:` for `@type`, `id:` for
+`@id`; SPEC §4.3) are honoured on input — the aliased and quoted spellings
+read identically.
 
 ## Example output
 

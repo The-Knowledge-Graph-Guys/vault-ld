@@ -1,5 +1,5 @@
 ---
-"@type": "[[Ingredient]]"
+type: "[[Ingredient]]"
 label: Chickpeas
 ---
 # Chickpeas

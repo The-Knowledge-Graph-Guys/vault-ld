@@ -1,5 +1,5 @@
 ---
-"@type": "[[Recipe]]"
+type: "[[Recipe]]"
 requiresIngredient: "[[Chickpeas]]"
 difficulty: "[[Beginner]]"
 prepTimeMinutes: 25

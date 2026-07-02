@@ -99,7 +99,10 @@ The correspondences of §5.5, read right-to-left from the export:
   dateTimes round-trip natively; other datatypes get a coercion added to the
   coined term's definition;
 - multi-valued predicates (and terms declared `"@container": "@set"`) become
-  flow lists: `subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`.
+  flow lists: `subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`;
+- when the context aliases the JSON-LD keywords (`type:` for `@type`, `id:`
+  for `@id`; SPEC §4.3), notes are written with the aliased spelling — plain
+  YAML keys, no quoting; a synthesized context declares both aliases.
 
 ## What is preserved on regeneration
 

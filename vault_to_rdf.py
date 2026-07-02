@@ -148,14 +148,21 @@ def load_context(path: Path, warnings: list[str]) -> "Context":
 
 
 class Context:
-    """A composed @context: prefix map plus short-name term definitions."""
+    """A composed @context: prefix map, short-name term definitions, and any
+    keyword aliases ("type": "@type", "id": "@id" — JSON-LD 1.1 keyword
+    aliasing, SPEC §4.3)."""
 
     def __init__(self, ctx: dict):
         self.base = ctx.get("@base", "")
         self.prefixes: dict[str, str] = {}
         self.terms: dict[str, dict] = {}
+        self.aliases: dict[str, str] = {}   # alias name -> keyword ("type" -> "@type")
         for key, val in ctx.items():
             if key.startswith("@"):
+                continue
+            target = val.get("@id") if isinstance(val, dict) else val
+            if target in ("@type", "@id"):
+                self.aliases[key] = target
                 continue
             if isinstance(val, str) and (val.startswith("http") or "#" in val or val.endswith("/")):
                 # treat single-string namespace-looking values as prefixes,
@@ -191,6 +198,15 @@ def parse_frontmatter(path: Path) -> dict | None:
         return None
     data = yaml.safe_load(parts[1])
     return data if isinstance(data, dict) else None
+
+
+def canonical_keywords(fm: dict, ctx: "Context") -> dict:
+    """Rename context-declared keyword aliases to the keywords themselves
+    ("type" -> "@type", "id" -> "@id"; SPEC §4.3), so every tool reasons over
+    one canonical spelling regardless of which one the author wrote."""
+    if not ctx.aliases:
+        return fm
+    return {ctx.aliases.get(k, k): v for k, v in fm.items()}
 
 
 def type_values(fm: dict) -> list[str]:
@@ -303,6 +319,8 @@ def main() -> int:
     discovered: list[tuple[Path, dict, str, set[str] | None]] = []
     for path in sorted(vault.rglob("*.md")):
         fm = parse_frontmatter(path)
+        if fm is not None:
+            fm = canonical_keywords(fm, ctx)
         if fm is None or "@type" not in fm:
             continue
         layer, expected = locate(path, vault)

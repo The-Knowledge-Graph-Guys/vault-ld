@@ -1,5 +1,5 @@
 ---
-"@type": owl:Ontology
+type: owl:Ontology
 label: Culinary
 comment: "A minimal example ontology for recipes and ingredients, used to demonstrate the Vault-LD format."
 tags: [ owl-ontology, Culinary ]

@@ -1,5 +1,5 @@
 ---
-"@type": skos:Concept
+type: skos:Concept
 prefLabel: no-cook
 definition: "Needs no heat at all; assembly only."
 broader: "[[Beginner]]"

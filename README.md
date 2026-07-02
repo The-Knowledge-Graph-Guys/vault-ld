@@ -50,7 +50,7 @@ Read this note:
 
 ```markdown
 ---
-"@type": "[[Recipe]]"
+type: "[[Recipe]]"
 requiresIngredient: "[[Chickpeas]]"
 prepTimeMinutes: 25
 ---

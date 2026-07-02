@@ -49,7 +49,7 @@ Vocabularies/
     Beginner.md                    # skos:Concept - topConceptOf declared in frontmatter
     NoCook.md                      # skos:Concept - broader: [[Beginner]] (concept-to-concept)
 Recipes/
-  hummus.md                        # an instance: "@type": "[[Recipe]]"
+  hummus.md                        # an instance: type: "[[Recipe]]"
 ```
 
 The root `context.jsonld` carries the cross-cutting core (shared prefixes, the data `@base`, and the structural RDFS/OWL/SKOS terms) and *composes* each ontology's and vocabulary's own context by reference. Every ontology or vocabulary ships a `context.jsonld` beside its notes that declares its own namespace (`@base`) and any domain terms it coins (§4.2); a vocabulary whose predicates are all generic SKOS may declare only its `@base`. The `Classes/` and `Properties/` folders are **flat**: they group resources by kind, not by hierarchy. A class's place in the `subClassOf` tree (and a concept's place in the `broader`/`narrower` tree) is declared in its frontmatter, not in its folder path. Folders are an organisational convenience and carry no formal meaning.
@@ -64,7 +64,7 @@ Each file is one RDF resource. Its frontmatter key/value pairs are predicate/obj
 
 ```markdown
 ---
-"@type": "[[Recipe]]"
+type: "[[Recipe]]"
 requiresIngredient: "[[Chickpeas]]"
 prepTimeMinutes: 25
 ---
@@ -124,13 +124,21 @@ When composing contexts, a tool **SHOULD** warn if a later context redefines a t
 
 | Concern                       | Rule                        | Example                                        |
 | ----------------------------- | --------------------------- | ---------------------------------------------- |
-| Type declaration              | wiki link to the class      | `"@type": "[[Recipe]]"`                        |
+| Type declaration              | wiki link to the class      | `type: "[[Recipe]]"`                           |
 | Object property (→ resource)  | wiki link                   | `requiresIngredient: "[[Chickpeas]]"`          |
 | Datatype property (→ literal) | plain scalar                | `prepTimeMinutes: 25`, `published: 2026-06-17` |
 | External-vocabulary term (in a **value**) | prefixed CURIE  | `subClassOf: [ sdo:Recipe ]`                   |
 | Field name (the **key**)      | bare short alias, never prefixed | `comment:` not `rdfs:comment:`            |
 
 A prefix's place is on a *value* that references a foreign vocabulary (the `sdo:Recipe` row), never on a *key*. Keys are always the bare short alias the context defines: write `comment:`, and the context's term definition (`"comment": "rdfs:comment"`) expands it to `rdfs:comment` on resolution. Writing `rdfs:comment:` as a key inlines a mapping the context already owns, breaks the "model defined in one place" principle, and won't match the short names the vault's tooling and queries expect.
+
+**Keyword aliases make the keys plain YAML.** YAML reserves `@` at the start of a plain scalar, so the JSON-LD keywords `@type` and `@id` would have to be written quoted (`"@type":`) in every note — the one piece of YAML awkwardness the format would otherwise force on every author. A context **MAY** therefore alias them, using JSON-LD 1.1's own *keyword aliasing*:
+
+```json
+{ "type": "@type", "id": "@id" }
+```
+
+A conforming tool **MUST** honour keyword aliases declared in the composed context, treating the aliased and keyword spellings identically on input; a tool that generates the Markdown face **SHOULD** write the aliased spelling when one is declared. The example vault declares both, which is why its notes read `type: "[[Recipe]]"` and `id:` with no quoting; a vault whose context declares no alias writes the quoted keywords. An alias is a context-owned name like any other: the shadowing rules of §4.2 apply to it, and a domain ontology that wants `type` or `id` as its own term simply must not alias over it.
 
 **Host-tool keys are not triples.** Some frontmatter keys belong to the host editor, not the graph: `tags`, `aliases`, and `cssclasses` in Obsidian are the common cases. These are affordances of the editing surface. While such a key is *unmapped*, a conforming tool **MUST NOT** emit it as a triple and **MUST NOT** warn about it as an unmapped construct; it is known and deliberately outside the graph. A deployment **MAY** promote one by mapping it in the context (`tags` to `dcat:keyword`, say), at which point it becomes an ordinary term like any other — emitted, round-tripped, and shadow-checked (§4.2) exactly as any term is.
 
@@ -159,7 +167,7 @@ A note with no frontmatter, or whose frontmatter lacks `@type`, does **not** par
 A note **MAY** declare an explicit identity:
 
 ```yaml
-"@id": https://example.org/recipes/hummus
+id: https://example.org/recipes/hummus
 ```
 
 When `@id` is omitted, the resource's identity is its **file name resolved against the `@base` of its namespace**, analogously to how JSON-LD resolves a relative `@id` (against the *scoped* base of the note's own ontology or vocabulary, per the scoped-base rule of §4.2). A file name may contain characters that are not legal in an IRI (spaces are the common case); when minting an identity from such a name, a tool **MUST** percent-encode the offending characters per RFC 3987, so `Red Lentil Soup.md` mints `.../Red%20Lentil%20Soup`. An explicit `@id` sidesteps encoding entirely. Each ontology/vocabulary declares that `@base` in its own context (`https://example.org/culinary#` for Culinary), and instance notes resolve against the data base — so a class file `Recipe.md` becomes `cul:Recipe` and an instance `hummus.md` becomes `data:hummus` (§5.4). Only the file name participates, never the folder path. Most notes therefore need no identifier at all and remain addressable regardless. An explicit `@id` overrides this and pins a stable IRI that survives even a rename.
@@ -168,7 +176,7 @@ When `@id` is omitted, the resource's identity is its **file name resolved again
 
 ```yaml
 ---
-"@type": "[[Recipe]]"
+type: "[[Recipe]]"
 requiresIngredient: "[[Lentils]]"
 difficulty: "[[Beginner]]"
 ---
@@ -178,8 +186,8 @@ difficulty: "[[Beginner]]"
 
 ```yaml
 ---
-"@id": https://example.org/recipes/red-lentil-soup
-"@type": "[[Recipe]]"
+id: https://example.org/recipes/red-lentil-soup
+type: "[[Recipe]]"
 requiresIngredient: "[[Lentils]]"
 difficulty: "[[Beginner]]"
 ---
@@ -189,7 +197,7 @@ Both are valid; the second simply pins a stable IRI that survives file moves.
 
 ### 4.6 Two layers, one mechanism
 
-The same YAML-LD mechanism carries both the **schema layer** (definitions: `@type: owl:Class`, `owl:ObjectProperty`, `skos:Concept`, and so on) and the **instance layer** (typed notes: `"@type": "[[Recipe]]"`). An instance links to its schema through the `@type` wiki link, so data and the model that types it are never more than a click apart.
+The same YAML-LD mechanism carries both the **schema layer** (definitions: `@type: owl:Class`, `owl:ObjectProperty`, `skos:Concept`, and so on) and the **instance layer** (typed notes: `type: "[[Recipe]]"`). An instance links to its schema through the `@type` wiki link, so data and the model that types it are never more than a click apart.
 
 ## 5. The RDF ⇄ Vault-Format Roundtrip
 
@@ -222,7 +230,7 @@ So this note:
 
 ```yaml
 ---
-"@type": owl:Class
+type: owl:Class
 label: Recipe
 subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]
 ---
@@ -244,7 +252,7 @@ Folders **MAY** still be nested for editorial convenience (and legacy ontologies
 
 ```yaml
 ---
-"@type": owl:ObjectProperty
+type: owl:ObjectProperty
 label: requires ingredient                 # → rdfs:label
 comment: "Links a recipe to an ingredient it depends on."   # → rdfs:comment
 domain: [ "[[Recipe]]" ]                    # → rdfs:domain
@@ -325,7 +333,7 @@ The **body is the one deliberate asymmetry**. It carries no triples, so it has n
 
 A note participates correctly in linked data when:
 
-- [ ] `@type` is present and is a wiki link (instances) or a CURIE such as `owl:Class` (definitions).
+- [ ] `@type` (written directly or via a declared alias such as `type:`, §4.3) is present and is a wiki link (instances) or a CURIE such as `owl:Class` (definitions).
 - [ ] object properties use `[[Wiki links]]`; datatype properties use plain scalars (their datatype, including dates, is supplied by the context, not written inline).
 - [ ] frontmatter field names are the short forms defined in the context (no inline `rdfs:` / `owl:` prefixes on field names).
 - [ ] every prefix or term used resolves through the active context — the shared vault context, an optional per-file `@context` layered over it (§4.2), an `@vocab` default, or a declared prefix (host-tool keys such as `tags`, `aliases`, and `cssclasses` excepted; §4.3); a term resolved by none of these is flagged, not dropped.
@@ -359,6 +367,8 @@ A complete, copyable vault with one ontology, one vocabulary, and one instance.
   "@context": [
     {
       "@base": "https://example.org/",
+      "type": "@type",
+      "id": "@id",
       "owl": "http://www.w3.org/2002/07/owl#",
       "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
       "skos": "http://www.w3.org/2004/02/skos/core#",
@@ -409,7 +419,7 @@ A complete, copyable vault with one ontology, one vocabulary, and one instance.
 **`Ontologies/Culinary/Classes/Recipe.md`**
 ```yaml
 ---
-"@type": owl:Class
+type: owl:Class
 label: Recipe
 comment: "A set of instructions for preparing a dish."
 subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]   # local + external parents, both in frontmatter
@@ -422,7 +432,7 @@ The unit of culinary knowledge: ingredients plus method.
 **`Ontologies/Culinary/Properties/requiresIngredient.md`**
 ```yaml
 ---
-"@type": owl:ObjectProperty
+type: owl:ObjectProperty
 label: requires ingredient
 comment: "Links a recipe to an ingredient it depends on."
 domain: [ "[[Recipe]]" ]
@@ -435,7 +445,7 @@ tags: [ owl-property, Culinary ]
 **`Vocabularies/DifficultyLevels/Beginner.md`**
 ```yaml
 ---
-"@type": skos:Concept
+type: skos:Concept
 prefLabel: beginner
 definition: "Approachable for a first-time cook; few steps, common ingredients."
 topConceptOf: "[[DifficultyLevels]]"         # scheme membership; broader is concept-to-concept only
@@ -447,7 +457,7 @@ tags: [ skos-concept, DifficultyLevels ]
 **`Vocabularies/DifficultyLevels/NoCook.md`**
 ```yaml
 ---
-"@type": skos:Concept
+type: skos:Concept
 prefLabel: no-cook
 definition: "Needs no heat at all; assembly only."
 broader: "[[Beginner]]"                      # concept hierarchy in frontmatter, like subClassOf
@@ -459,7 +469,7 @@ tags: [ skos-concept, DifficultyLevels ]
 **`Recipes/hummus.md`**
 ```yaml
 ---
-"@type": "[[Recipe]]"
+type: "[[Recipe]]"
 requiresIngredient: "[[Chickpeas]]"
 difficulty: "[[Beginner]]"
 prepTimeMinutes: 25
@@ -474,7 +484,7 @@ A handful of notes, a composed context, no server, and a graph you can read with
 
 Google's [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) (OKF) describes a directory of Markdown files with YAML frontmatter in which exactly one field, `type`, is required and every other field is producer-defined. That is already the physical shape of a Vault-LD vault; what an OKF bundle lacks is the context that gives its names shared meaning. This appendix defines the lift: how an OKF bundle becomes a conforming Vault-LD vault **without modifying a single bundle file**.
 
-1. **Add a root `context.jsonld`.** JSON-LD permits aliasing its keywords, so the context maps OKF's bare `type` key onto `@type` and declares a default vocabulary for the producer's terms:
+1. **Add a root `context.jsonld`.** The keyword aliasing of §4.3 does the whole job: the context maps OKF's bare `type` key onto `@type` — the same alias the example vault itself declares — and declares a default vocabulary for the producer's terms:
 
    ```json
    {

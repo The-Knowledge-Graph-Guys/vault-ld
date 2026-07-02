@@ -1,5 +1,5 @@
 ---
-"@type": owl:Class
+type: owl:Class
 label: Creative Work
 comment: "The most generic kind of creative content; superclass of Recipe."
 subClassOf: [ sdo:CreativeWork ]
