@@ -117,9 +117,10 @@ The tool prints warnings to stderr instead of dropping anything silently
 - two composed contexts define the **same term or prefix differently** — the
   later definition wins (SPEC §4.2); an identical re-declaration stays silent.
 
-Host-editor keys (`tags`, `aliases`, `cssclasses`) are skipped **silently**:
-they are affordances of the editing surface, not unmapped constructs
-(SPEC §4.3). Wiki links are resolved per the SPEC §4.4.1 grammar: aliases
+Host-editor keys (`tags`, `aliases`, `cssclasses`) are skipped **silently**
+while unmapped: they are affordances of the editing surface, not unmapped
+constructs (SPEC §4.3). A deployment that maps one in the context has
+*promoted* it, and it exports like any other term. Wiki links are resolved per the SPEC §4.4.1 grammar: aliases
 (`[[name|shown]]`) and fragments (`[[name#Heading]]`) are stripped, and a
 path-qualified link (`[[path/to/name]]`) selects among same-named notes by
 matching its path against each note's vault-relative path (right-aligned on

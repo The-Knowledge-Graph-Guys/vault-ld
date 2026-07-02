@@ -132,7 +132,7 @@ When composing contexts, a tool **SHOULD** warn if a later context redefines a t
 
 A prefix's place is on a *value* that references a foreign vocabulary (the `sdo:Recipe` row), never on a *key*. Keys are always the bare short alias the context defines: write `comment:`, and the context's term definition (`"comment": "rdfs:comment"`) expands it to `rdfs:comment` on resolution. Writing `rdfs:comment:` as a key inlines a mapping the context already owns, breaks the "model defined in one place" principle, and won't match the short names the vault's tooling and queries expect.
 
-**Host-tool keys are not triples.** Some frontmatter keys belong to the host editor, not the graph: `tags`, `aliases`, and `cssclasses` in Obsidian are the common cases. These are affordances of the editing surface. A conforming tool **MUST NOT** emit them as triples and **MUST NOT** warn about them as unmapped constructs; they are known and deliberately outside the graph. A deployment **MAY** instead promote one by mapping it in the context (`tags` to `dcat:keyword`, say), at which point it becomes an ordinary term like any other.
+**Host-tool keys are not triples.** Some frontmatter keys belong to the host editor, not the graph: `tags`, `aliases`, and `cssclasses` in Obsidian are the common cases. These are affordances of the editing surface. While such a key is *unmapped*, a conforming tool **MUST NOT** emit it as a triple and **MUST NOT** warn about it as an unmapped construct; it is known and deliberately outside the graph. A deployment **MAY** promote one by mapping it in the context (`tags` to `dcat:keyword`, say), at which point it becomes an ordinary term like any other — emitted, round-tripped, and shadow-checked (§4.2) exactly as any term is.
 
 ### 4.4 Wiki links are the edges
 
@@ -302,7 +302,7 @@ This is the export direction *when Markdown is the designated source of truth*, 
 
 This is the direction taken both when importing foreign RDF and when **Turtle is the standing source of truth**, for example a SHACL-rich ontology maintained in `.ttl` with this Markdown view generated from it. Ingest simply inverts the same rules:
 
-1. one subject ⇒ one `.md` file in the flat `Classes/` or `Properties/` folder; the localname ⇒ the file name;
+1. one subject ⇒ one `.md` file in the flat `Classes/` or `Properties/` folder; the localname ⇒ the file name, percent-**decoded**: an ingester **SHOULD** reverse the encoding of §4.5 when choosing a file name, so `Red%20Lentil%20Soup` becomes `Red Lentil Soup.md` and mints back to the identical IRI without an explicit `@id`;
 2. `rdfs:subClassOf` / `rdfs:subPropertyOf` / `skos:broader` ⇒ a `subClassOf` / `subPropertyOf` / `broader` frontmatter field whose values are `[[Wiki links]]` (no folder nesting);
 3. every other predicate, including `rdfs:comment`, ⇒ a short frontmatter field (added to the context if new); an IRI-valued object ⇒ a `[[Wiki link]]` **when the IRI is a note in the vault** (a subject this ingest is materialising, or one an existing note claims via `@id`), and a prefixed CURIE otherwise, exactly as §4.3 places external-vocabulary terms in values (`subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`); literals ⇒ scalars (datatypes supplied by the context);
 4. the body is **not** populated from the graph. It is left for human- or model-authored prose, so on a pure ingest it starts empty; only the frontmatter is round-tripped (§5.3).

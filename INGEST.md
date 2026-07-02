@@ -75,9 +75,12 @@ A note whose frontmatter would not change is not rewritten at all, keeping
 `git status` quiet on a no-op regeneration.
 
 **Identity is checked, not assumed** (§4.5): after choosing a file name, the tool
-computes the IRI a forward export would mint for it. Only when that differs from
-the subject's actual IRI (foreign instances, an ontology IRI that isn't
-`base + name`) does the note get an explicit `"@id"`.
+computes the IRI a forward export would mint for it — percent-encoded, exactly
+as the exporter mints (§4.5). File names are chosen by percent-*decoding* the
+IRI's localname, so an exported `Red%20Lentil%20Soup` comes back as
+`Red Lentil Soup.md`. Only when the re-minted IRI differs from the subject's
+actual IRI (foreign instances, an ontology IRI that isn't `base + name`) does
+the note get an explicit `"@id"`.
 
 ## How the frontmatter is built
 

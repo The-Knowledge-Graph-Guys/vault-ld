@@ -34,7 +34,8 @@ from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF
 
 # Host-editor keys are affordances of the editing surface, not triples
-# (SPEC §4.3): never emitted, never warned about.
+# (SPEC §4.3): when unmapped, never emitted and never warned about. A context
+# mapping promotes one to an ordinary term, exported like any other.
 HOST_KEYS = {"tags", "aliases", "cssclasses"}
 
 
@@ -419,13 +420,13 @@ def main() -> int:
                     g.add((subj, RDF.type, resolve_iri(str(v))))
                 continue
 
-            if key in HOST_KEYS:
-                continue
-
             term = ctx.terms.get(key)
             if term is None:
+                if key in HOST_KEYS:
+                    continue  # unmapped host key: editor affordance (SPEC §4.3)
                 warnings.append(f"{path.name}: field '{key}' not in context -> skipped")
                 continue
+            # a mapped host key is a promoted term (SPEC §4.3) and exports normally
 
             pred = URIRef(ctx.expand_curie(term["@id"]))
             coercion = term.get("@type")  # "@id", a datatype CURIE, or None

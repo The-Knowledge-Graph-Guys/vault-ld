@@ -40,6 +40,7 @@ import sys
 from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import unquote
 
 import yaml
 from rdflib import BNode, Graph, Literal, URIRef
@@ -57,6 +58,7 @@ from vault_to_rdf import (
     Context,
     context_base,
     governing,
+    iri_safe,
     load_context,
     locate,
     parse_frontmatter,
@@ -123,8 +125,11 @@ def split_iri(iri: str) -> tuple[str, str]:
 
 
 def sanitize_stem(local: str) -> str:
-    """Make a localname safe as a file stem."""
-    return re.sub(r'[\\/:*?"<>|%]', "-", local) or "unnamed"
+    """Make a localname safe as a file stem, percent-decoding first (SPEC §4.5,
+    §5.5): the forward direction minted `Red Lentil Soup.md` as
+    `Red%20Lentil%20Soup`, so decoding restores the file name that mints back
+    to the identical IRI — no explicit @id pin needed."""
+    return re.sub(r'[\\/:*?"<>|]', "-", unquote(local)) or "unnamed"
 
 
 def derive_folder_name(ns: str) -> str:
@@ -301,11 +306,11 @@ def scan_existing_notes(vault: Path, ctx: Context, data_ns: str,
         if "@id" in fm:
             iri = ctx.expand_curie(str(fm["@id"]))
         elif layer == "data":
-            iri = data_ns + path.stem
+            iri = data_ns + iri_safe(path.stem)
         else:
             gov, name = governing(path, vault)
             base = context_base(gov.parent / "context.jsonld", warnings) or ""
-            iri = base + path.stem
+            iri = base + iri_safe(path.stem)
         if iri in by_iri:
             warnings.append(f"notes {by_iri[iri]} and {path} both identify <{iri}> "
                             f"— updates go to the former")
@@ -656,13 +661,14 @@ def main() -> int:
         old_fm = old_fm or {}
 
         # explicit @id whenever file-name minting (SPEC §4.5, as the forward
-        # direction performs it) would not reproduce the subject's IRI
+        # direction performs it — percent-encoded) would not reproduce the
+        # subject's IRI
         layer, _ = locate(path, vault)
         if layer == "data":
-            minted = data_ns + stem
+            minted = data_ns + iri_safe(stem)
         else:
             gov, _name = governing(path, vault)
-            minted = (context_base(gov.parent / "context.jsonld", warnings) or "") + stem
+            minted = (context_base(gov.parent / "context.jsonld", warnings) or "") + iri_safe(stem)
 
         new_fm: dict = {}
         if minted != iri:
