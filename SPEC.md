@@ -46,7 +46,8 @@ Vocabularies/
   DifficultyLevels/
     context.jsonld                 # the vocabulary's own namespace (@base)
     DifficultyLevels.md            # skos:ConceptScheme
-    Beginner.md                    # skos:Concept - broader declared in frontmatter
+    Beginner.md                    # skos:Concept - topConceptOf declared in frontmatter
+    NoCook.md                      # skos:Concept - broader: [[Beginner]] (concept-to-concept)
 Recipes/
   hummus.md                        # an instance: "@type": "[[Recipe]]"
 ```
@@ -113,6 +114,10 @@ Each referenced ontology context also declares the **`@base` for its own namespa
 
 Composition is transparent to authors: every short name still resolves through one effective context, whichever file physically defines it. The benefit is modularity — an ontology owns its vocabulary *and its namespace*, the root merely lists the ontologies it composes — without giving any note a local `@context`.
 
+> **Deviation from JSON-LD 1.1 context processing.** A standard JSON-LD processor *ignores* `@base` in an externally referenced context; only the root document's `@base` would ever apply. Vault-LD deliberately departs from this in one respect: a conforming tool reads each referenced ontology/vocabulary context **in isolation** and uses its `@base` as the *scoped base* under which that ontology's own members are minted (§4.5, §5.4). Term and prefix definitions compose exactly as JSON-LD specifies (left-to-right, later entries overriding earlier ones), and a referenced context's `@base` never overrides the root's for anything outside its own folder. The consequence: a generic JSON-LD processor given the composed context resolves every *term* identically, but subject IRIs are minted by the rules of this specification, not by JSON-LD relative-IRI resolution.
+
+When composing contexts, a tool **SHOULD** warn if a later context redefines a term or prefix an earlier one already defined: JSON-LD's override semantics make the shadowing legal, but across independently authored ontologies it is almost always an accidental name collision, and it is silent by default.
+
 ### 4.3 The field-naming contract
 
 | Concern                       | Rule                        | Example                                        |
@@ -125,9 +130,25 @@ Composition is transparent to authors: every short name still resolves through o
 
 A prefix's place is on a *value* that references a foreign vocabulary (the `sdo:Recipe` row), never on a *key*. Keys are always the bare short alias the context defines: write `comment:`, and the context's term definition (`"comment": "rdfs:comment"`) expands it to `rdfs:comment` on resolution. Writing `rdfs:comment:` as a key inlines a mapping the context already owns, breaks the "model defined in one place" principle, and won't match the short names the vault's tooling and queries expect.
 
+**Host-tool keys are not triples.** Some frontmatter keys belong to the host editor, not the graph: `tags`, `aliases`, and `cssclasses` in Obsidian are the common cases. These are affordances of the editing surface. A conforming tool **MUST NOT** emit them as triples and **MUST NOT** warn about them as unmapped constructs; they are known and deliberately outside the graph. A deployment **MAY** instead promote one by mapping it in the context (`tags` to `dcat:keyword`, say), at which point it becomes an ordinary term like any other.
+
 ### 4.4 Wiki links are the edges
 
 `[[Target]]` is how one node references another, and it does two jobs at once. As linked data it is the object IRI: on export `[[Recipe]]` becomes the URI `:Recipe`. As a tool affordance it is a real, clickable, **bidirectional** link, so the same keystroke that asserts a triple also lights up graph view and backlinks. This is why object properties and `@type` are **always** wiki links and never plain strings: the format refuses to make you choose between machine meaning and human navigation.
+
+Strictly, the wiki-link syntax is a Vault-LD *extension* to YAML-LD: `"[[Recipe]]"` is a plain string until the resolution step (§4.4.1) rewrites it as an IRI reference. A generic YAML-LD processor sees a string where a Vault-LD tool sees an edge; conformant processing therefore means applying §4.4.1 before, or as part of, JSON-LD expansion.
+
+#### 4.4.1 Link grammar and resolution
+
+A wiki link is `[[name]]`, optionally carrying a path (`[[path/to/name]]`), an alias (`[[name|display text]]`), or a fragment (`[[name#Heading]]`). For the graph:
+
+- the **alias** is display-only and **MUST** be ignored for resolution;
+- a **path** disambiguates only: resolution uses the final segment (the note name), and when several participating notes share a name, a tool **SHOULD** use the path to select among them;
+- a **fragment** addresses a location inside a note, not a resource; the graph edge resolves to the note itself, and a tool **MAY** warn that the fragment was discarded.
+
+A link resolves to the participating note whose file name equals the link's note name, and the object IRI is that note's identity: its explicit `@id` when declared, its minted IRI otherwise (§4.5). Two participating notes sharing a file name make bare links to that name ambiguous; a tool **MUST** warn, and authors **SHOULD** disambiguate with a path-qualified link or an explicit `@id`. A link that names no participating note is **dangling**: a tool **MUST** flag it (§5.6) and **MAY** still mint an IRI for the missing target in the data namespace so the edge is preserved rather than dropped.
+
+A note with no frontmatter, or whose frontmatter lacks `@type`, does **not** participate in the graph; it is an ordinary document. A link from a participating note to such a note is dangling in the sense above, even though the file exists and the link navigates perfectly well in the host tool.
 
 ### 4.5 Identity
 
@@ -137,7 +158,7 @@ A note **MAY** declare an explicit identity:
 "@id": https://example.org/recipes/hummus
 ```
 
-When `@id` is omitted, the resource's identity is its **file name resolved against the `@base` of its namespace**, the way JSON-LD resolves a relative `@id`. Each ontology/vocabulary declares that `@base` in its own context (`https://example.org/culinary#` for Culinary), and instance notes resolve against the data base — so a class file `Recipe.md` becomes `cul:Recipe` and an instance `hummus.md` becomes `data:hummus` (§5.4). Only the file name participates, never the folder path. Most notes therefore need no identifier at all and remain addressable regardless. An explicit `@id` overrides this and pins a stable IRI that survives even a rename.
+When `@id` is omitted, the resource's identity is its **file name resolved against the `@base` of its namespace**, analogously to how JSON-LD resolves a relative `@id` (against the *scoped* base of the note's own ontology or vocabulary, per the deviation note in §4.2). A file name may contain characters that are not legal in an IRI (spaces are the common case); when minting an identity from such a name, a tool **MUST** percent-encode the offending characters per RFC 3987, so `Red Lentil Soup.md` mints `.../Red%20Lentil%20Soup`. An explicit `@id` sidesteps encoding entirely. Each ontology/vocabulary declares that `@base` in its own context (`https://example.org/culinary#` for Culinary), and instance notes resolve against the data base — so a class file `Recipe.md` becomes `cul:Recipe` and an instance `hummus.md` becomes `data:hummus` (§5.4). Only the file name participates, never the folder path. Most notes therefore need no identifier at all and remain addressable regardless. An explicit `@id` overrides this and pins a stable IRI that survives even a rename.
 
 #### Example: an instance with identity by file path
 
@@ -188,7 +209,10 @@ Hierarchical axioms are **declared in frontmatter as wiki links, and folders car
 
 - a class's `subClassOf` field ⇒ its `rdfs:subClassOf`,
 - a property's `subPropertyOf` field ⇒ its `rdfs:subPropertyOf`,
-- a concept's `broader` field ⇒ its `skos:broader`.
+- a concept's `broader` field ⇒ its `skos:broader`,
+- a top concept's `topConceptOf` field ⇒ its `skos:topConceptOf`.
+
+Note the SKOS distinction the last two rows encode: `broader` relates a concept to a **parent concept** (both ends are `skos:Concept`; `skos:broader` is a sub-property of `skos:semanticRelation`, whose domain and range are concepts). Membership of the *scheme* is a different predicate: a concept at the top of its tree points at the `skos:ConceptScheme` with `topConceptOf`, never with `broader`. Pointing `broader` at a scheme entails, wrongly, that the scheme is itself a concept.
 
 So this note:
 
@@ -243,7 +267,7 @@ An export tool walks the vault and emits Turtle. The transform is mechanical:
 3. Convert each `[[Wiki link]]` to a full URI by resolving the target note's own identity.
 4. Read `subClassOf` / `subPropertyOf` / `broader` from frontmatter (wiki links), like any other predicate; folder placement is ignored for *hierarchy*.
 5. Decide each note's **layer from its folder**: notes under `Ontologies/` and `Vocabularies/` are the schema layer, everything else is the instance layer (§3, §5.1).
-6. Mint each subject by resolving the note's **file name against the `@base` of the namespace it belongs to**, exactly as JSON-LD resolves a relative `@id` (§4.5). Each ontology/vocabulary declares its own `@base` in its context (a *scoped base per ontology*: `https://example.org/culinary#` for Culinary, `https://example.org/difficulty#` for Difficulty Levels); instance notes resolve against the data base. The folder *path* never appears in the IRI — only the file name (= the resource name, §5.1) does, so moving a file between folders does not change its identity.
+6. Mint each subject by resolving the note's **file name against the `@base` of the namespace it belongs to** (the scoped base of §4.2's deviation note, applied as §4.5 describes, with non-IRI-safe characters percent-encoded). Each ontology/vocabulary declares its own `@base` in its context (a *scoped base per ontology*: `https://example.org/culinary#` for Culinary, `https://example.org/difficulty#` for Difficulty Levels); instance notes resolve against the data base. The folder *path* never appears in the IRI — only the file name (= the resource name, §5.1) does, so moving a file between folders does not change its identity.
 7. Emit by **layer** to two Turtle files (`schema.ttl`, `data.ttl`) with standard `@prefix` headers. A layer may contain several ontology namespaces; cross-references (an instance's `@type`, a property's `domain`, a class's external alignment) simply carry the relevant prefix, so the files together are one graph.
 
 For `Recipe.md` (Culinary ontology, schema layer) the output is:
@@ -276,7 +300,7 @@ This is the direction taken both when importing foreign RDF and when **Turtle is
 
 1. one subject ⇒ one `.md` file in the flat `Classes/` or `Properties/` folder; the localname ⇒ the file name;
 2. `rdfs:subClassOf` / `rdfs:subPropertyOf` / `skos:broader` ⇒ a `subClassOf` / `subPropertyOf` / `broader` frontmatter field whose values are `[[Wiki links]]` (no folder nesting);
-3. every other predicate, including `rdfs:comment`, ⇒ a short frontmatter field (added to the context if new); IRI-valued objects ⇒ `[[Wiki links]]`; literals ⇒ scalars (datatypes supplied by the context);
+3. every other predicate, including `rdfs:comment`, ⇒ a short frontmatter field (added to the context if new); an IRI-valued object ⇒ a `[[Wiki link]]` **when the IRI is a note in the vault** (a subject this ingest is materialising, or one an existing note claims via `@id`), and a prefixed CURIE otherwise, exactly as §4.3 places external-vocabulary terms in values (`subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`); literals ⇒ scalars (datatypes supplied by the context);
 4. the body is **not** populated from the graph. It is left for human- or model-authored prose, so on a pure ingest it starts empty; only the frontmatter is round-tripped (§5.3).
 
 The frontmatter rules are symmetric on purpose: the same correspondences read in either direction. The body is the one asymmetry: it is born in Markdown and has no RDF counterpart to ingest from.
@@ -300,12 +324,12 @@ A note participates correctly in linked data when:
 - [ ] `@type` is present and is a wiki link (instances) or a CURIE such as `owl:Class` (definitions).
 - [ ] object properties use `[[Wiki links]]`; datatype properties use plain scalars (their datatype, including dates, is supplied by the context, not written inline).
 - [ ] frontmatter field names are the short forms defined in the context (no inline `rdfs:` / `owl:` prefixes on field names).
-- [ ] every prefix or term used resolves through the active context — the shared vault context, an optional per-file `@context` layered over it (§4.2), an `@vocab` default, or a declared prefix; a term resolved by none of these is flagged, not dropped.
+- [ ] every prefix or term used resolves through the active context — the shared vault context, an optional per-file `@context` layered over it (§4.2), an `@vocab` default, or a declared prefix (host-tool keys such as `tags`, `aliases`, and `cssclasses` excepted; §4.3); a term resolved by none of these is flagged, not dropped.
 - [ ] for definitions: hierarchy is declared in frontmatter via `subClassOf` / `subPropertyOf` / `broader` (wiki links); folder placement is flat and carries **no** formal meaning.
 - [ ] the generated face (whichever serialization a deployment derives: the `.ttl` when Markdown is source, the Markdown when Turtle is source) is treated as read-only; edits go to the source of truth and are regenerated.
 - [ ] body text is never emitted as RDF, and a generator that produces the Markdown face **MUST** preserve existing bodies rather than clobber them on regeneration.
 
-A tool is conforming when it implements §5.4 and §5.5 as inverses, privileges neither serialization as source of truth, and honours §5.6 (flag unmapped constructs, do not drop; preserve bodies).
+A tool **MAY** implement one direction only: it is a **conforming exporter** when it implements §5.4, and a **conforming ingester** when it implements §5.5, in each case honouring §5.6 (flag unmapped constructs, do not drop; preserve bodies) and the link-resolution rules of §4.4.1. A **conforming roundtrip tool** implements both directions as inverses and privileges neither serialization as source of truth.
 
 ## 7. Relationship to Existing Work
 
@@ -316,6 +340,8 @@ This format does not invent a data model. It composes existing ones and chooses 
 - **OWL / RDFS** supply the schema vocabulary for classes and properties; this spec only says *where* those definitions are stored and *how* hierarchy is encoded (frontmatter wiki links, not folders).
 - **SKOS** supplies controlled vocabularies; concept schemes and concepts are stored as ordinary notes like everything else.
 - **Wiki links**, native to Obsidian and Notion, are reused as the IRI-reference mechanism, which is what makes the same files navigable by hand.
+- **Markdown bundle formats**, such as Google's [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF), standardise the *envelope*: a directory of Markdown files with YAML frontmatter, one required `type` field, everything else producer-defined. They deliberately stop short of shared semantics, so two producers' bundles share a file format but not a vocabulary. Vault-LD is complementary rather than competing: it is the semantic layer such a bundle can adopt without changing its files. Appendix B gives the lift.
+- **Agent-maintained Markdown wikis** (the pattern popularised by Karpathy's "LLM wiki" sketch and its many implementations) demonstrate the same substrate from the tooling side: persistent, interlinked notes that an LLM reads, extends, and lints, governed by prose conventions in a schema document. Vault-LD supplies what prose conventions cannot enforce: formal types, declared hierarchy, and a context that makes every field machine-resolvable, so the wiki's structure can be validated and queried rather than trusted.
 
 The format's only original move is insisting that all of these share one directory and one effective context (composed from however many documents) so that a graph can be read, edited, and handed on without any of them being privileged over the others.
 
@@ -341,6 +367,8 @@ A complete, copyable vault with one ontology, one vocabulary, and one instance.
       "subClassOf":    { "@id": "rdfs:subClassOf",    "@type": "@id", "@container": "@set" },
       "subPropertyOf": { "@id": "rdfs:subPropertyOf", "@type": "@id", "@container": "@set" },
       "broader":       { "@id": "skos:broader",       "@type": "@id" },
+      "topConceptOf":  { "@id": "skos:topConceptOf",  "@type": "@id" },
+      "inScheme":      { "@id": "skos:inScheme",      "@type": "@id" },
       "domain": { "@id": "rdfs:domain", "@type": "@id" },
       "range":  { "@id": "rdfs:range",  "@type": "@id" }
     },
@@ -406,10 +434,22 @@ tags: [ owl-property, Culinary ]
 "@type": skos:Concept
 prefLabel: beginner
 definition: "Approachable for a first-time cook; few steps, common ingredients."
-broader: "[[DifficultyLevels]]"              # concept hierarchy in frontmatter, like subClassOf
+topConceptOf: "[[DifficultyLevels]]"         # scheme membership; broader is concept-to-concept only
 tags: [ skos-concept, DifficultyLevels ]
 ---
 # Beginner
+```
+
+**`Vocabularies/DifficultyLevels/NoCook.md`**
+```yaml
+---
+"@type": skos:Concept
+prefLabel: no-cook
+definition: "Needs no heat at all; assembly only."
+broader: "[[Beginner]]"                      # concept hierarchy in frontmatter, like subClassOf
+tags: [ skos-concept, DifficultyLevels ]
+---
+# No-Cook
 ```
 
 **`Recipes/hummus.md`**
@@ -425,3 +465,31 @@ A smooth purée of chickpeas, tahini, lemon, and garlic.
 ```
 
 A handful of notes, a composed context, no server, and a graph you can read with your eyes or export to Turtle on demand.
+
+## Appendix B: Lifting an OKF Bundle (Compatibility Profile)
+
+Google's [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) describes a directory of Markdown files with YAML frontmatter in which exactly one field, `type`, is required and every other field is producer-defined. That is already the physical shape of a Vault-LD vault; what an OKF bundle lacks is the context that gives its names shared meaning. This appendix defines the lift: how an OKF bundle becomes a conforming Vault-LD vault **without modifying a single bundle file**.
+
+1. **Add a root `context.jsonld`.** JSON-LD permits aliasing its keywords, so the context maps OKF's bare `type` key onto `@type` and declares a default vocabulary for the producer's terms:
+
+   ```json
+   {
+     "@context": {
+       "@base": "https://example.org/bundle/",
+       "@vocab": "https://example.org/bundle/vocab#",
+       "type": "@type"
+     }
+   }
+   ```
+
+   Every OKF note now reads as YAML-LD: its `type: concept` becomes an `@type` whose value resolves under `@vocab`, and each producer-defined field resolves under `@vocab` until it is given a proper term definition.
+
+2. **Promote `type` values to classes as needed.** Each distinct `type` string in the bundle names a class implicitly. To make one first-class, create the class note (`Ontologies/{Name}/Classes/{Type}.md`, §5.1) and, where the producer's string and the class name differ, map the string to the class IRI in the context. Nothing forces this step: an unpromoted `type` still yields a consistent, queryable `@type` triple under `@vocab`.
+
+3. **Promote producer-defined fields the same way.** A field gains datatype or IRI coercion, and a place in a shared vocabulary, by receiving a term definition in the context (§4.2, §5.6). Until then it resolves under `@vocab` as an unrefined but present predicate.
+
+4. **Reserved files participate like any note.** OKF reserves `index.md` and `log.md`. Under this profile they carry no special graph semantics: like every other note, they participate in the graph exactly when they carry typed frontmatter (§4.4.1) and stay outside it otherwise.
+
+5. **Body links stay navigational.** OKF encodes its graph as ordinary Markdown links in the body; Vault-LD's triples live in frontmatter only (§5.3). The lift therefore captures the bundle's *frontmatter* facts. A producer who wants a body link to become an edge promotes it to a frontmatter property, at which point it is a wiki link like any other (§4.4).
+
+The direction of travel is incremental: an untouched OKF bundle plus the three-line context above is already valid linked data at coarse grain, and every promotion step (a class note here, a term definition there) sharpens it without ever breaking the files for tools that only understand OKF.

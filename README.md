@@ -14,7 +14,7 @@ Both directions work because of the **roundtrip**. Since the frontmatter is YAML
 
 ## What's here
 
-- **[SPEC.md](SPEC.md)**: the normative reference. It defines how frontmatter becomes a knowledge graph (§4) and how any RDF graph round-trips through the vault format with full fidelity (§5), along with terminology, directory structure, and conformance criteria.
+- **[SPEC.md](SPEC.md)**: the normative reference. It defines how frontmatter becomes a knowledge graph (§4) and how any RDF graph round-trips through the vault format with full fidelity (§5), along with terminology, directory structure, conformance criteria, and a compatibility profile for lifting OKF-style Markdown bundles into linked data (Appendix B).
 - **`Vault-LD Example/`**: a complete, copyable vault that demonstrates every rule in the spec. It holds one ontology (`Culinary`), one controlled vocabulary (`Difficulty Levels`), and one instance (`hummus`). Its root `context.jsonld` composes the Culinary ontology's own context, showing how multiple contexts compose (SPEC §4.2).
 - **`vault_to_rdf.py`**: a reference exporter that projects a vault to RDF — see [Exporting to RDF](#exporting-to-rdf) below.
 - **`rdf_to_vault.py`**: the reference ingester running the other way, RDF → vault — see [Ingesting RDF](#ingesting-rdf) below. Together the two tools close the roundtrip.

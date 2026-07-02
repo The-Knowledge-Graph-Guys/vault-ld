@@ -60,7 +60,7 @@ vocabulary → `skos:Concept`). If a note's `@type` isn't an expected type for i
 folder, the tool **warns** rather than silently mis-modelling it.
 
 **A subject's IRI is its file name resolved against the `@base` of its
-namespace** — the same way JSON-LD resolves a relative `@id`:
+namespace** — per the scoped-base rule (SPEC §4.2 deviation note, §4.5):
 
 - each ontology/vocabulary folder uses the `@base` declared in *its own*
   `context.jsonld` (read in isolation, so each keeps a scoped base): `Recipe.md`
@@ -68,7 +68,8 @@ namespace** — the same way JSON-LD resolves a relative `@id`:
   `Vocabularies/DifficultyLevels/` → `diff:Beginner`;
 - data-layer notes resolve against `--data-ns` → `data:hummus`;
 - only the **file name** is used, never the folder path, so moving a file
-  between folders doesn't change its IRI;
+  between folders doesn't change its IRI; characters not legal in an IRI
+  (spaces, most commonly) are percent-encoded (SPEC §4.5);
 - an explicit `@id` in frontmatter overrides all of this and is honoured as-is.
 
 If a schema folder's context declares no `@base`, the tool falls back to
@@ -109,7 +110,15 @@ The tool prints warnings to stderr instead of dropping anything silently
 - a schema-folder note carries an **unexpected `@type`** for its location;
 - a wiki link is **dangling** (its target note isn't found — the IRI is still
   minted, in the data namespace);
-- a referenced context file is **missing** or **remote**.
+- a referenced context file is **missing** or **remote**;
+- two participating notes **share a file name**, making bare wiki links to that
+  name ambiguous (SPEC §4.4.1).
+
+Host-editor keys (`tags`, `aliases`, `cssclasses`) are skipped **silently**:
+they are affordances of the editing surface, not unmapped constructs
+(SPEC §4.3). Wiki links are resolved per the SPEC §4.4.1 grammar: aliases
+(`[[name|shown]]`) and fragments (`[[name#Heading]]`) are stripped, and a
+path-qualified link (`[[path/to/name]]`) resolves by its final segment.
 
 ## Example output
 
