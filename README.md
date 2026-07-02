@@ -68,3 +68,11 @@ You have just read these triples:
 ```
 
 The frontmatter is the graph; the body is prose for human and machine readers. One shared `context.jsonld` supplies the IRIs, datatypes, and prefixes, so authors write short, clean names while the semantics are supplied for them. See the [Vault-LD Specification](SPEC.md) for the full rules.
+
+## Contributing
+
+Vault-LD is an open standard and contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Spec changes start life as an issue using the *Spec change proposal* template; fixes to the reference tools, example vault, and docs can go straight to a pull request.
+
+## License
+
+[Apache License 2.0](LICENSE).
