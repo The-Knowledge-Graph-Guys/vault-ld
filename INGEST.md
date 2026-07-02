@@ -122,7 +122,10 @@ Nothing is dropped silently (SPEC §5.6). You will see a warning for:
 - a literal whose datatype disagrees with its term's coercion (retyped on export);
 - an IRI object on a term without `@id` coercion (exported as a string);
 - a namespace with no `owl:Ontology`/`skos:ConceptScheme` subject (folder name derived);
-- a name collision between two subjects (wiki links resolve by note name);
+- an **ambiguous note name** (two notes share it) — links to those notes are
+  emitted **path-qualified** so they resolve unambiguously (SPEC §4.4.1);
+- a **file collision** (a subject's canonical path already belongs to another
+  subject) — the note gets a suffixed name (`-2`), pinned by an explicit `@id`;
 - a subject with no `rdf:type` (a forward export will skip that note).
 
 > **Note** This is the *ingest* direction (RDF → Vault), used when Turtle is the
