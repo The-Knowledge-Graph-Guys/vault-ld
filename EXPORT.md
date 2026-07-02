@@ -132,4 +132,6 @@ data:Chickpeas a cul:Ingredient ;
 
 > **Note** This is the *export* direction (Vault → RDF), which assumes Markdown
 > is the source of truth. The generated `.ttl` files are read-only artifacts:
-> edit the notes and regenerate, don't patch the Turtle (SPEC §5.4).
+> edit the notes and regenerate, don't patch the Turtle (SPEC §5.4). For the
+> opposite direction — RDF → Vault, when Turtle is the source of truth or when
+> importing foreign RDF — see [`rdf_to_vault.py`](INGEST.md).
