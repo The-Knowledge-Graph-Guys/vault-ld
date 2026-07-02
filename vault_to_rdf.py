@@ -300,7 +300,7 @@ def main() -> int:
         if layer == "data":
             return URIRef(DATA[iri_safe(path.stem)])
         # schema layer: resolve the file name against the ontology's scoped
-        # @base (SPEC §4.2 deviation note, §4.5, §5.4).
+        # @base (SPEC §4.2 scoped-base rule, §4.5, §5.4).
         gov_path, name = governing(path, vault)
         base = base_for(gov_path, name)
         return URIRef(base + iri_safe(path.stem))

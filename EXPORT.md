@@ -60,7 +60,7 @@ vocabulary → `skos:Concept`). If a note's `@type` isn't an expected type for i
 folder, the tool **warns** rather than silently mis-modelling it.
 
 **A subject's IRI is its file name resolved against the `@base` of its
-namespace** — per the scoped-base rule (SPEC §4.2 deviation note, §4.5):
+namespace** — per the scoped-base rule (SPEC §4.2, §4.5):
 
 - each ontology/vocabulary folder uses the `@base` declared in *its own*
   `context.jsonld` (read in isolation, so each keeps a scoped base): `Recipe.md`
