@@ -25,20 +25,23 @@ pip install rdflib pyyaml
 ## Usage
 
 ```sh
-python rdf_to_vault.py <vault> <rdf-file>... [--context PATH] [--data-ns IRI]
+python scripts/rdf_to_vault.py <vault> <rdf-file>... [--context PATH] [--data-ns IRI] [--nest]
 ```
 
 Round-trip the bundled example:
 
 ```sh
-python vault_to_rdf.py "Vault-LD Example" --out-dir build
-python rdf_to_vault.py "Vault-LD Example" build/schema.ttl build/data.ttl   # → 10 unchanged
+python scripts/vault_to_rdf.py "Vault-LD Example" --source --out-dir build
+python scripts/rdf_to_vault.py "Vault-LD Example" build/schema.ttl build/data.ttl   # → 11 unchanged
 ```
+
+(The `--source` flag makes the export a roundtrip face — the default export is
+a query-only artifact whose placement can't be restored; see EXPORT.md.)
 
 Import a foreign ontology into a brand-new vault (context synthesized):
 
 ```sh
-python rdf_to_vault.py MyVault foreign-ontology.ttl
+python scripts/rdf_to_vault.py MyVault foreign-ontology.ttl
 ```
 
 | Flag | Default | Meaning |
@@ -46,7 +49,8 @@ python rdf_to_vault.py MyVault foreign-ontology.ttl
 | `vault` (positional) | — | vault root directory, created if missing |
 | `rdf` (positional, repeatable) | — | RDF file(s) to ingest — any format rdflib recognises by extension (`.ttl`, `.nt`, `.jsonld`, …) |
 | `--context` | `<vault>/context.jsonld` | the root context document; when neither exists, one is **synthesized** from a standard core plus the graph's own namespaces |
-| `--data-ns` | `https://example.org/data/` | instance-layer namespace IRI (must match the export's) |
+| `--data-ns` | the root context's `@base` | explicit vault-root base for instance subjects (must match the export's); replaces the root `@base` only — a data folder's own `context.jsonld` still governs its subtree. Also the `@base` of a synthesized context |
+| `--nest` | off | organise newly created schema files into hierarchy-derived subfolders instead of the flat canonical layout (see below) |
 
 ## How it decides what goes where
 
@@ -55,11 +59,18 @@ python rdf_to_vault.py MyVault foreign-ontology.ttl
 | Subject typed | Written to |
 |---|---|
 | `owl:Ontology` | `Ontologies/{Name}/{Name}.md` |
-| `owl:Class` / `rdfs:Class` | `Ontologies/{Name}/Classes/{ClassName}.md` |
+| `owl:Class` / `rdfs:Class` | `Ontologies/{Name}/Classes/{ClassName}.md` — flat, the canonical form (§5.1); with `--nest`, nested under its single-local-parent chain |
 | any OWL/RDF property type | `Ontologies/{Name}/Properties/{propertyName}.md` |
 | `skos:ConceptScheme` | `Vocabularies/{Scheme}/{Scheme}.md` |
-| `skos:Concept` | `Vocabularies/{Scheme}/{Concept}.md` |
-| anything else (instances) | `{TypeName}s/{name}.md` (e.g. a `lib:Book` → `Books/`) |
+| `skos:Concept` | `Vocabularies/{Scheme}/{Concept}.md` — flat at the vocabulary's top level, the canonical form (§5.1); with `--nest`, non-top concepts nest under their `skos:broader` chain |
+| anything else (instances) | the file the IRI names, at the context root (`<base>hummus` → `hummus.md`); foreign IRIs fall back to `{TypeName}s/{name}.md` (e.g. a `lib:Book` → `Books/`) — but almost every instance arrives with a `vld:path` hint instead (see below) |
+
+Two placements outrank the table. A subject carrying a **`vld:path
+"<path>.md"` triple** — the true path the export records whenever the graph
+alone could not reconstruct a file's location (SPEC §5.4 step 7) — is written
+to exactly that path, and the triple is consumed: it never appears in
+frontmatter, because on the vault side the path is simply where the file sits.
+And an **existing note** for the subject wins over everything (see below).
 
 Schema subjects are grouped into ontology/vocabulary folders **by namespace**: the
 folder is named after the `owl:Ontology` / `skos:ConceptScheme` subject minted in
@@ -68,19 +79,29 @@ graph declares none). Each new folder gets a `context.jsonld` declaring the
 namespace as its scoped `@base`, and the root context is extended to compose it
 (SPEC §4.2).
 
-**Existing notes win over canonical placement.** If a note with the subject's
-name already exists anywhere in the vault, it is updated *in place* — folders
-carry no formal meaning (§5.2), so regeneration never reshuffles your structure.
-A note whose frontmatter would not change is not rewritten at all, keeping
-`git status` quiet on a no-op regeneration.
+**`--nest` is folder management, not modelling.** On a fresh build it lays
+schema files out along the declared hierarchy — each class under its single
+local parent, recursively (`Classes/CreativeWork/Recipe.md`), top concepts at
+the vocabulary's top level, everything else under its `broader` chain. This
+changes nothing in the graph (SPEC §5.2 keeps folders meaningless) and is
+deliberately **not part of the spec** — it's this tool's convenience for
+browsing a large ontology, and other tools are free to organise differently.
+A later `--source` export records whatever layout exists via `vld:path`,
+so a nested vault still round-trips 1:1.
 
-**Identity is checked, not assumed** (§4.5): after choosing a file name, the tool
-computes the IRI a forward export would mint for it — percent-encoded, exactly
-as the exporter mints (§4.5). File names are chosen by percent-*decoding* the
-IRI's localname, so an exported `Red%20Lentil%20Soup` comes back as
-`Red Lentil Soup.md`. Only when the re-minted IRI differs from the subject's
-actual IRI (foreign instances, an ontology IRI that isn't `base + name`) does
-the note get an explicit `"@id"`.
+**Existing notes win over canonical placement.** If a note already minting the
+subject's IRI exists anywhere in the vault, it is updated *in place*, so
+regeneration never reshuffles your structure. A note whose frontmatter would
+not change is not rewritten at all, keeping `git status` quiet on a no-op
+regeneration.
+
+**Identity is checked, not assumed** (§4.5): after choosing a path, the tool
+computes the IRI a forward export would mint for it — the file name alone
+against the governing `@base`, percent-encoded, exactly as the exporter
+mints. File names are chosen by percent-*decoding* the IRI, so an exported
+`Red%20Lentil%20Soup` comes back as `Red Lentil Soup.md`. Only when the
+re-minted IRI differs from the subject's actual IRI does the note get an
+explicit `id` — the full absolute IRI, which export uses verbatim.
 
 ## How the frontmatter is built
 
@@ -100,6 +121,10 @@ The correspondences of §5.5, read right-to-left from the export:
   coined term's definition;
 - multi-valued predicates (and terms declared `"@container": "@set"`) become
   flow lists: `subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`;
+- hierarchy is **always written explicitly** into frontmatter
+  (`subClassOf` / `broader` / `topConceptOf`) — frontmatter is its only
+  carrier (SPEC §5.2); with `--nest` the folder layout mirrors it too, but
+  that is shelving, not semantics;
 - when the context aliases the JSON-LD keywords (`type:` for `@type`, `id:`
   for `@id`; SPEC §4.3), notes are written with the aliased spelling — plain
   YAML keys, no quoting; a synthesized context declares both aliases.
@@ -112,7 +137,7 @@ Per SPEC §5.6 and the conformance rules (§6):
   below the closing `---` stays; a freshly ingested note starts with an empty body;
 - **non-context frontmatter keys** (`tags:`, `aliases:`, …) belong to the
   Markdown face, not the graph, and are kept;
-- a **valid explicit `@id`** already pinned in a note is kept.
+- a **valid explicit `id`** already pinned in a note is kept (one that resolves to the subject's IRI against the governing `@base`).
 
 ## Warnings
 
