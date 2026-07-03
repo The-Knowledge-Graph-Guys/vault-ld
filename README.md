@@ -62,8 +62,10 @@ A smooth purée of chickpeas, tahini, lemon, and garlic.
 You have just read these triples:
 
 ```turtle
-<this-file> a :Recipe ;
-            :requiresIngredient <Chickpeas> ;
+@prefix : <https://example.org/> .
+
+:Hummus a :Recipe ;
+            :requiresIngredient :Chickpeas ;
             :prepTimeMinutes 25 .
 ```
 
