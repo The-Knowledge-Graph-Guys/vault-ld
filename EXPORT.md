@@ -8,11 +8,11 @@ layer**:
 | File | Holds | Namespaces |
 |---|---|---|
 | `schema.ttl` | the schema layer — classes, properties, ontologies, concept schemes, concepts | one per ontology/vocabulary, e.g. `cul:` `https://example.org/culinary#`, `diff:` `https://example.org/difficulty#` |
-| `data.ttl`   | the instance layer — typed notes (recipes, ingredients, …) | the data namespace, e.g. `data:` `https://example.org/data/` |
+| `data.ttl`   | the instance layer — typed notes (recipes, ingredients, …) | the vault base (the root context's `@base`), e.g. `https://example.org/` |
 
 Each ontology/vocabulary lives in **its own namespace**, declared as the `@base`
 in that ontology's context. Cross-references between layers are preserved: an
-instance's `@type` and object properties point across into the relevant ontology
+instance's `type` and object properties point across into the relevant ontology
 namespace, so the two files together are one graph.
 
 ## Requirements
@@ -41,7 +41,7 @@ python vault_to_rdf.py "Vault-LD Example" --out-dir build
 | `vault` (positional) | — | path to the vault root directory |
 | `--context` | `<vault>/context.jsonld` | the root context document |
 | `--out-dir` | `.` | where to write `schema.ttl` and `data.ttl` |
-| `--data-ns` | `https://example.org/data/` | instance-layer namespace IRI |
+| `--data-ns` | the root context's `@base` | explicit vault-root base for instance subjects; replaces the root `@base` only — a data folder's own `context.jsonld` still governs its subtree |
 | `--schema-ns` | `https://example.org/schema/` | fallback base for a schema folder whose context declares no `@base` |
 
 ## How it decides what goes where
@@ -59,18 +59,36 @@ file → `owl:Ontology`, a vocabulary scheme → `skos:ConceptScheme`, the rest 
 vocabulary → `skos:Concept`). If a note's `@type` isn't an expected type for its
 folder, the tool **warns** rather than silently mis-modelling it.
 
-**A subject's IRI is its file name resolved against the `@base` of its
-namespace** — per the scoped-base rule (SPEC §4.2, §4.5):
+**A subject's IRI is minted from its location, against the `@base` of its
+governing context** — per the scoped-base rule (SPEC §4.2, §4.5):
 
-- each ontology/vocabulary folder uses the `@base` declared in *its own*
-  `context.jsonld` (read in isolation, so each keeps a scoped base): `Recipe.md`
-  under `Ontologies/Culinary/` → `cul:Recipe`, `Beginner.md` under
-  `Vocabularies/DifficultyLevels/` → `diff:Beginner`;
-- data-layer notes resolve against `--data-ns` → `data:hummus`;
-- only the **file name** is used, never the folder path, so moving a file
-  between folders doesn't change its IRI; characters not legal in an IRI
-  (spaces, most commonly) are percent-encoded (SPEC §4.5);
-- an explicit `@id` in frontmatter overrides all of this and is honoured as-is.
+- **schema notes** use the **file name alone**, resolved against the `@base`
+  declared in *their own* ontology's/vocabulary's `context.jsonld` (read in
+  isolation, so each keeps a scoped base): `Recipe.md` under
+  `Ontologies/Culinary/` → `cul:Recipe`, `Beginner.md` under
+  `Vocabularies/DifficultyLevels/` → `diff:Beginner`. The `Classes/` and
+  `Properties/` folders — and any hierarchy nesting inside them (SPEC §5.2) —
+  never enter the IRI;
+- **instance notes** use their **path relative to the governing context's
+  folder** (the nearest `context.jsonld` above them, usually the vault root),
+  without the `.md` extension: `Recipes/hummus.md` →
+  `<https://example.org/Recipes/hummus>`;
+- characters not legal in an IRI (spaces, most commonly) are percent-encoded
+  (SPEC §4.5);
+- an explicit `id` in frontmatter overrides location: the IRI is flattened to
+  `base + id` (the value must be a relative reference, never an absolute IRI).
+
+**`dcterms:source` carries any path the graph can't reconstruct** (SPEC §5.4
+step 7): a pinned instance whose IRI no longer encodes its path, or a schema
+note whose placement deviates from the hierarchy-canonical nesting of §5.2 —
+so ingest can restore every file 1:1.
+
+**Folder nesting is read as hierarchy where frontmatter is silent** (SPEC
+§5.2): a class file nested under a folder named after another class exports
+`rdfs:subClassOf` it; a concept directly in its vocabulary folder exports
+`skos:topConceptOf` the scheme, and one nested under another concept exports
+`skos:broader` it. An explicit frontmatter declaration always wins, and a
+visible disagreement between the two warns.
 
 If a schema folder's context declares no `@base`, the tool falls back to
 `--schema-ns` + the ontology name.
@@ -109,7 +127,11 @@ The tool prints warnings to stderr instead of dropping anything silently
   to the context to make it first-class);
 - a schema-folder note carries an **unexpected `@type`** for its location;
 - a wiki link is **dangling** (its target note isn't found — the IRI is still
-  minted, in the data namespace);
+  minted, under the vault base);
+- an explicit `id` is an **absolute IRI** (non-conforming, SPEC §4.5 — the
+  value must be relative, flattened against the governing `@base`);
+- a note's **nesting disagrees with its declared hierarchy** (nested under a
+  folder its `subClassOf`/`broader` doesn't mention — frontmatter wins, SPEC §5.2);
 - a referenced context file is **missing** or **remote**;
 - two participating notes **share a file name**, making bare wiki links to that
   name ambiguous (SPEC §4.4.1) — or mint the **same IRI**, silently merging
@@ -135,18 +157,21 @@ For the bundled example vault, `data.ttl` is:
 
 ```turtle
 @prefix cul: <https://example.org/culinary#> .
-@prefix data: <https://example.org/data/> .
 @prefix diff: <https://example.org/difficulty#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-data:hummus a cul:Recipe ;
+<https://example.org/Recipes/hummus> a cul:Recipe ;
     cul:difficulty diff:Beginner ;
     cul:prepTimeMinutes 25 ;
-    cul:requiresIngredient data:Chickpeas .
+    cul:requiresIngredient <https://example.org/Ingredients/Chickpeas> .
 
-data:Chickpeas a cul:Ingredient ;
+<https://example.org/Ingredients/Chickpeas> a cul:Ingredient ;
     rdfs:label "Chickpeas" .
 ```
+
+The `data:` prefix stays bound to the vault base for condensed output where
+Turtle allows it — a prefixed local name cannot contain `/`, so flat root-level
+instances compact to `data:name` while nested instances serialize as full IRIs.
 
 > **Note** This is the *export* direction (Vault → RDF), which assumes Markdown
 > is the source of truth. The generated `.ttl` files are read-only artifacts:

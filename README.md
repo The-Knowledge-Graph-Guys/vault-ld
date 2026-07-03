@@ -24,9 +24,9 @@ Both directions work because of the **roundtrip**. Since the frontmatter is YAML
 The repo ships `vault_to_rdf.py`, a small Python tool that reads a vault and emits Turtle, split by layer into two files:
 
 - `schema.ttl` — the schema layer (classes, properties, concepts), each ontology in its own namespace (`cul:`, `diff:`, …),
-- `data.ttl` — the instance layer (typed notes) in the data namespace.
+- `data.ttl` — the instance layer (typed notes) under the vault base, each IRI minted from the note's vault-relative path.
 
-It classifies each note by its folder, mints each subject under its ontology's `@base`, resolves frontmatter through the vault's composed `@context`, and flags anything it can't map rather than dropping it. Export the example vault to `build/` in one line:
+It classifies each note by its folder, mints each subject under the `@base` of its governing context (schema notes from their file name, instances from their vault-relative path — SPEC §4.5), resolves frontmatter through the vault's composed `@context`, and flags anything it can't map rather than dropping it. Export the example vault to `build/` in one line:
 
 ```sh
 pip install rdflib pyyaml && python vault_to_rdf.py "Vault-LD Example" --out-dir build

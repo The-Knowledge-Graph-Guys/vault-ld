@@ -52,7 +52,7 @@ Recipes/
   hummus.md                        # an instance: type: "[[Recipe]]"
 ```
 
-The root `context.jsonld` carries the cross-cutting core (shared prefixes, the data `@base`, and the structural RDFS/OWL/SKOS terms) and *composes* each ontology's and vocabulary's own context by reference. Every ontology or vocabulary ships a `context.jsonld` beside its notes that declares its own namespace (`@base`) and any domain terms it coins (§4.2); a vocabulary whose predicates are all generic SKOS may declare only its `@base`. The `Classes/` and `Properties/` folders are **flat**: they group resources by kind, not by hierarchy. A class's place in the `subClassOf` tree (and a concept's place in the `broader`/`narrower` tree) is declared in its frontmatter, not in its folder path. Folders are an organisational convenience and carry no formal meaning.
+The root `context.jsonld` carries the cross-cutting core (shared prefixes, the data `@base`, and the structural RDFS/OWL/SKOS terms) and *composes* each ontology's and vocabulary's own context by reference. Every ontology or vocabulary ships a `context.jsonld` beside its notes that declares its own namespace (`@base`) and any domain terms it coins (§4.2); a vocabulary whose predicates are all generic SKOS may declare only its `@base`. The `Classes/` and `Properties/` folders group resources **by kind**, and in their canonical form are flat. A class's place in the `subClassOf` tree (and a concept's place in the `broader`/`narrower` tree) is authoritatively declared in its frontmatter; nesting a schema file inside a folder named after its parent **MAY** additionally carry the single-parent case, read only where the frontmatter is silent (§5.2). Instance folders shape identity (§4.5); schema nesting never does.
 
 There is nothing else to install. The directory *is* the knowledge base, and it is self-describing: every name a file uses resolves through the composed context, which travels with the vault.
 
@@ -164,15 +164,26 @@ A note with no frontmatter, or whose frontmatter lacks `@type`, does **not** par
 
 ### 4.5 Identity
 
-A note **MAY** declare an explicit identity:
+A note **MAY** declare an explicit identity through `id` (the alias of `@id`, §4.3):
 
 ```yaml
-id: https://example.org/recipes/hummus
+id: recipes/red-lentil-soup
 ```
 
-When `@id` is omitted, the resource's identity is its **file name resolved against the `@base` of its namespace**, analogously to how JSON-LD resolves a relative `@id` (against the *scoped* base of the note's own ontology or vocabulary, per the scoped-base rule of §4.2). A file name may contain characters that are not legal in an IRI (spaces are the common case); when minting an identity from such a name, a tool **MUST** percent-encode the offending characters per RFC 3987, so `Red Lentil Soup.md` mints `.../Red%20Lentil%20Soup`. An explicit `@id` sidesteps encoding entirely. Each ontology/vocabulary declares that `@base` in its own context (`https://example.org/culinary#` for Culinary), and instance notes resolve against the data base — so a class file `Recipe.md` becomes `cul:Recipe` and an instance `hummus.md` becomes `data:hummus` (§5.4). Only the file name participates, never the folder path. Most notes therefore need no identifier at all and remain addressable regardless. An explicit `@id` overrides this and pins a stable IRI that survives even a rename.
+The value is a **relative IRI reference**, and minting is unconditional flattening: the IRI is `base + id`, where the base is the `@base` of the note's **governing context** — the nearest `context.jsonld` at or above the note's folder. The value **MUST NOT** be an absolute IRI: flattening always prepends the base, so an absolute value would double-prefix (`https://example.org/https://example.org/…`). The field carries only the part *after* the base.
 
-#### Example: an instance with identity by file path
+When `id` is omitted, identity is minted from where the note lives, against that same governing `@base` — analogously to how JSON-LD resolves a relative `@id`, though which base applies is Vault-LD's own assembly rule (the scoped-base rule of §4.2), not stock JSON-LD behaviour. Only the vault-root context is mandatory; per-ontology and per-vocabulary contexts are optional refinements. The two layers mint differently:
+
+- **Schema notes** (under `Ontologies/` and `Vocabularies/`): the **file name alone**, resolved against the owning ontology's or vocabulary's scoped `@base` — `Recipe.md` becomes `cul:Recipe`. The `Classes/` and `Properties/` folders never enter the IRI: that folder structure is standardised (§5.1) and the naming convention (classes PascalCase, properties camelCase) already tells a reader the kind, so the path would add no information.
+- **Instance notes** (everything else): the **file path relative to the governing context's folder**, without the `.md` extension — `Recipes/hummus.md` under a root `@base` of `https://example.org/` becomes `<https://example.org/Recipes/hummus>`.
+
+A file name or path segment may contain characters that are not legal in an IRI (spaces are the common case); when minting an identity from a location, a tool **MUST** percent-encode the offending characters per RFC 3987, so `Red Lentil Soup.md` mints `.../Red%20Lentil%20Soup`. An explicit `id` sidesteps encoding entirely. Most notes need no identifier at all and remain addressable regardless.
+
+An instance IRI travels with the file's location: moving an instance note re-mints its identity, unless the note pins one. An explicit `id` is exactly that pin — a stable IRI that survives renames and moves. When a pinned note is exported, its true path is carried alongside the graph as a `dcterms:source` triple so the vault can be rehydrated 1:1 (§5.4, §5.5).
+
+#### Example: identity by file path
+
+The note lives at `Recipes/Soups/red-lentil-soup.md`, governed by the root context (`@base: https://example.org/`):
 
 ```yaml
 ---
@@ -182,18 +193,22 @@ difficulty: "[[Beginner]]"
 ---
 ```
 
-#### Example: the same instance with an explicit `@id`
+Minted IRI: `<https://example.org/Recipes/Soups/red-lentil-soup>` — the vault-relative path, `.md` dropped. Moving the file to `Recipes/` would re-mint it as `<https://example.org/Recipes/red-lentil-soup>`.
+
+#### Example: the same note with an explicit `id`
+
+Same file, same location — `Recipes/Soups/red-lentil-soup.md`:
 
 ```yaml
 ---
-id: https://example.org/recipes/red-lentil-soup
+id: recipes/red-lentil-soup
 type: "[[Recipe]]"
 requiresIngredient: "[[Lentils]]"
 difficulty: "[[Beginner]]"
 ---
 ```
 
-Both are valid; the second simply pins a stable IRI that survives file moves.
+Minted IRI: `<https://example.org/recipes/red-lentil-soup>` — flattened to `base + id`; the file's location no longer participates, so the note can move anywhere in the vault without changing identity. On export the true path (`Recipes/Soups/red-lentil-soup.md`) travels as `dcterms:source`, so ingest puts the file back exactly where it was (§5.5).
 
 ### 4.6 Two layers, one mechanism
 
@@ -213,11 +228,11 @@ The same YAML-LD mechanism carries both the **schema layer** (definitions: `@typ
 | `skos:ConceptScheme` | `Vocabularies/{Scheme}/{Scheme}.md` |
 | `skos:Concept` | `Vocabularies/{Scheme}/{Concept}.md` |
 
-Classes are PascalCase, properties camelCase; the file name **MUST** equal the resource name. Folders group resources by kind, not by hierarchy (§5.2).
+Classes are PascalCase, properties camelCase; the file name **MUST** equal the resource name. Folders group resources by kind; nesting within `Classes/` or a vocabulary folder **MAY** additionally encode single-parent hierarchy (§5.2).
 
-### 5.2 Hierarchy lives in the frontmatter
+### 5.2 Hierarchy: frontmatter is authoritative, folders can speak too
 
-Hierarchical axioms are **declared in frontmatter as wiki links, and folders carry no formal meaning**:
+Hierarchical axioms are **declared in frontmatter as wiki links**, and frontmatter is the authoritative carrier:
 
 - a class's `subClassOf` field ⇒ its `rdfs:subClassOf`,
 - a property's `subPropertyOf` field ⇒ its `rdfs:subPropertyOf`,
@@ -236,15 +251,23 @@ subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]
 ---
 ```
 
-asserts `:Recipe rdfs:subClassOf :CreativeWork, sdo:Recipe`, regardless of where the file sits. The `Classes/` folder is flat, reorganizing files moves nothing in the graph, and the hierarchy lives in exactly one place: the place every tool already reads.
+asserts `:Recipe rdfs:subClassOf :CreativeWork, sdo:Recipe`, regardless of where the file sits.
 
-This is the single source of truth that a conforming tool consumes. Dataview queries, RDFS subclass inference, and any ontology-explorer view all build their class trees from the `subClassOf` field, not from folder paths. Putting the axiom in frontmatter has three further benefits a folder path cannot offer:
+**Folder placement is a second, subordinate carrier of hierarchy.** Within the standardised schema tree, nesting encodes the common single-parent case:
+
+- a class file inside a folder named after another class ⇒ `rdfs:subClassOf` that class: `Classes/CreativeWork/Recipe.md` asserts `:Recipe rdfs:subClassOf :CreativeWork`;
+- a concept file sitting **directly in its vocabulary folder** ⇒ `skos:topConceptOf` the scheme — the top level of a vocabulary *is* its set of top concepts;
+- a concept file inside a folder named after another concept ⇒ `skos:broader` that concept.
+
+**Frontmatter wins.** A tool derives a relation from placement only where the note's frontmatter is silent about it: a nested class with no `subClassOf` field gets the folder parent; a concept with neither `broader` nor `topConceptOf` gets what its placement says. When frontmatter declares the relation, placement is purely organisational — and if the two visibly disagree (nested under `A/` while declaring only `subClassOf: [[B]]`), a tool **SHOULD** warn. Nesting never changes identity: schema notes mint from the file name alone (§4.5), so re-parenting by moving a file changes the hierarchy, not the IRI.
+
+Frontmatter remains the preferred, "idealistic" form because it can say things a folder path cannot:
 
 - **Multiple inheritance.** A folder path encodes exactly one parent; `subClassOf: [ "[[A]]", "[[B]]" ]` encodes many.
 - **Cross-ontology superclasses.** A wiki link can point at a class defined in another ontology (e.g. a domain class whose parent is `[[Thing]]` in a shared core ontology); a folder cannot reach across ontology trees.
 - **Cheap re-parenting.** Changing a class's parent is a one-line frontmatter edit and a clean diff, not a physical file move.
 
-Folders **MAY** still be nested for editorial convenience (and legacy ontologies may carry deep nesting), but a conforming tool **MUST** ignore folder placement when deriving hierarchy and read it from frontmatter alone.
+A roundtrip therefore **normalises toward the explicit form while preserving placement**: an ingester writes hierarchy into frontmatter whatever carried it on the way in (§5.5), so folder-only hierarchy comes back explicitly declared — and a fresh ingest **reproduces the nesting the hierarchy implies**. Canonical placement nests each class or concept under its single local parent, recursively, with top concepts at the vocabulary's top level; a class with no local parent, several parents, or only external parents sits flat in `Classes/`. A file whose actual location deviates from that canonical placement (a deliberately flat tree, a multi-parent class) travels with a `dcterms:source` path on export, so even non-canonical placement round-trips 1:1 (§5.4).
 
 ### 5.3 Triples in the frontmatter, prose in the body
 
@@ -279,8 +302,9 @@ An export tool walks the vault and emits Turtle. The transform is mechanical:
 3. Convert each `[[Wiki link]]` to a full URI by resolving the target note's own identity.
 4. Read `subClassOf` / `subPropertyOf` / `broader` from frontmatter (wiki links), like any other predicate; folder placement is ignored for *hierarchy*.
 5. Decide each note's **layer from its folder**: notes under `Ontologies/` and `Vocabularies/` are the schema layer, everything else is the instance layer (§3, §5.1).
-6. Mint each subject by resolving the note's **file name against the `@base` of the namespace it belongs to** (the scoped base of §4.2, applied as §4.5 describes, with non-IRI-safe characters percent-encoded). Each ontology/vocabulary declares its own `@base` in its context (a *scoped base per ontology*: `https://example.org/culinary#` for Culinary, `https://example.org/difficulty#` for Difficulty Levels); instance notes resolve against the data base. The folder *path* never appears in the IRI — only the file name (= the resource name, §5.1) does, so moving a file between folders does not change its identity.
-7. Emit by **layer** to two Turtle files (`schema.ttl`, `data.ttl`) with standard `@prefix` headers. A layer may contain several ontology namespaces; cross-references (an instance's `@type`, a property's `domain`, a class's external alignment) simply carry the relevant prefix, so the files together are one graph.
+6. Mint each subject per §4.5 (non-IRI-safe characters percent-encoded): a schema note's **file name** against its ontology's/vocabulary's `@base` (a *scoped base per ontology*: `https://example.org/culinary#` for Culinary, `https://example.org/difficulty#` for Difficulty Levels; the `Classes/` and `Properties/` folders never enter the IRI); an instance note's **path relative to its governing context's folder**, without `.md`, against that context's `@base`. A note with an explicit `id` mints as `base + id` instead.
+7. For each note whose actual location an ingester could **not** reconstruct from the graph, emit one extra triple — `dcterms:source "<context-relative path>.md"` — carrying the note's true location so ingest can restore the file 1:1 (§5.5). Two cases qualify: an instance whose explicit `id` made the minted IRI diverge from its path, and a schema note whose placement deviates from the hierarchy-canonical nesting of §5.2. All other notes need no such triple: an unpinned instance IRI already encodes its path, and a canonically placed schema note is reconstructed from its hierarchy.
+8. Emit by **layer** to two Turtle files (`schema.ttl`, `data.ttl`) with standard `@prefix` headers. A layer may contain several ontology namespaces; cross-references (an instance's `type`, a property's `domain`, a class's external alignment) simply carry the relevant prefix, so the files together are one graph.
 
 For `Recipe.md` (Culinary ontology, schema layer) the output is:
 
@@ -310,8 +334,8 @@ This is the export direction *when Markdown is the designated source of truth*, 
 
 This is the direction taken both when importing foreign RDF and when **Turtle is the standing source of truth**, for example a SHACL-rich ontology maintained in `.ttl` with this Markdown view generated from it. Ingest simply inverts the same rules:
 
-1. one subject ⇒ one `.md` file in the flat `Classes/` or `Properties/` folder; the localname ⇒ the file name, percent-**decoded**: an ingester **SHOULD** reverse the encoding of §4.5 when choosing a file name, so `Red%20Lentil%20Soup` becomes `Red Lentil Soup.md` and mints back to the identical IRI without an explicit `@id`;
-2. `rdfs:subClassOf` / `rdfs:subPropertyOf` / `skos:broader` ⇒ a `subClassOf` / `subPropertyOf` / `broader` frontmatter field whose values are `[[Wiki links]]` (no folder nesting);
+1. one subject ⇒ one `.md` file, placed by inverting §4.5's minting. A subject carrying a `dcterms:source "<path>.md"` triple is written to exactly that path (relative to the folder of the context whose `@base` its path was recorded against), and the triple is **consumed** — it never appears in frontmatter, because on the vault side the path is simply where the file sits; instead the note gets the explicit `id` (the IRI minus the governing `@base`) that made the path-carrying triple necessary. An instance IRI that extends a known `@base` becomes that context-relative path. A schema subject lands in the flat `Classes/` or `Properties/` folder under its namespace's ontology folder; the localname ⇒ the file name. Names are percent-**decoded**: an ingester **SHOULD** reverse the encoding of §4.5 when choosing file names, so `Red%20Lentil%20Soup` becomes `Red Lentil Soup.md` and mints back to the identical IRI without an explicit `id`;
+2. `rdfs:subClassOf` / `rdfs:subPropertyOf` / `skos:broader` / `skos:topConceptOf` ⇒ an explicit `subClassOf` / `subPropertyOf` / `broader` / `topConceptOf` frontmatter field whose values are `[[Wiki links]]` — **always written explicitly**, even when the relation was folder-inferred on the way in — and placement follows the hierarchy-canonical nesting of §5.2 (single local parent ⇒ nested folder, top concepts at the vocabulary top level) unless a `dcterms:source` path or an existing note dictates otherwise;
 3. every other predicate, including `rdfs:comment`, ⇒ a short frontmatter field (added to the context if new); an IRI-valued object ⇒ a `[[Wiki link]]` **when the IRI is a note in the vault** (a subject this ingest is materialising, or one an existing note claims via `@id`), and a prefixed CURIE otherwise, exactly as §4.3 places external-vocabulary terms in values (`subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`); literals ⇒ scalars (datatypes supplied by the context);
 4. the body is **not** populated from the graph. It is left for human- or model-authored prose, so on a pure ingest it starts empty; only the frontmatter is round-tripped (§5.3).
 
@@ -325,7 +349,7 @@ RDF (Turtle)              Markdown files (frontmatter triples + body docs)
             ───export──▶
 ```
 
-**Neither side is the privileged original.** The frontmatter and the Turtle are two serializations of the same graph; a deployment names one of them the source of truth (§5.4 and §5.5), and the other is the generated, read-only face. Fidelity is a property of the *graph*, not of either file. A roundtrip is faithful for everything the field-naming contract can express: types, labels, comments, domain and range, sub-class and sub-property, and any context-mapped predicate. A construct with no short-name mapping is **out of scope** until it is added to the context, and a conforming tool **MUST** flag such a construct rather than silently drop it. This incompleteness is recoverable: extend the context and the construct becomes first-class.
+**Neither side is the privileged original.** The frontmatter and the Turtle are two serializations of the same graph; a deployment names one of them the source of truth (§5.4 and §5.5), and the other is the generated, read-only face. Fidelity is a property of the *graph*, not of either file. A roundtrip is faithful for everything the field-naming contract can express: types, labels, comments, domain and range, sub-class and sub-property, and any context-mapped predicate. **File placement round-trips too**: an unpinned note's path is encoded in its IRI (§4.5), and a pinned note's true path travels as the `dcterms:source` triple — a triple that exists only on the RDF side, materialising on export and dissolving back into the file's location on ingest. A construct with no short-name mapping is **out of scope** until it is added to the context, and a conforming tool **MUST** flag such a construct rather than silently drop it. This incompleteness is recoverable: extend the context and the construct becomes first-class.
 
 The **body is the one deliberate asymmetry**. It carries no triples, so it has no representation in Turtle and does not survive a Markdown → RDF → Markdown roundtrip. That is by design (§5.3): the body is enrichment for human and machine readers attached to the Markdown serialization, not part of the graph being round-tripped. A deployment that keeps Turtle as its source of truth therefore treats the Markdown bodies as first-class, vault-resident content that the `.ttl` neither holds nor overwrites on regeneration.
 
@@ -337,7 +361,9 @@ A note participates correctly in linked data when:
 - [ ] object properties use `[[Wiki links]]`; datatype properties use plain scalars (their datatype, including dates, is supplied by the context, not written inline).
 - [ ] frontmatter field names are the short forms defined in the context (no inline `rdfs:` / `owl:` prefixes on field names).
 - [ ] every prefix or term used resolves through the active context — the shared vault context, an optional per-file `@context` layered over it (§4.2), an `@vocab` default, or a declared prefix (host-tool keys such as `tags`, `aliases`, and `cssclasses` excepted; §4.3); a term resolved by none of these is flagged, not dropped.
-- [ ] for definitions: hierarchy is declared in frontmatter via `subClassOf` / `subPropertyOf` / `broader` (wiki links); folder placement is flat and carries **no** formal meaning.
+- [ ] an explicit `id`, when present, is a relative reference (flattened to `base + id`, §4.5), never an absolute IRI.
+- [ ] for definitions: hierarchy is authoritative in frontmatter (`subClassOf` / `subPropertyOf` / `broader` / `topConceptOf` wiki links); folder nesting in the schema tree **MAY** encode a single parent, read only where frontmatter is silent, and never changes identity (§5.2, §4.5).
+- [ ] on export, a note whose location the graph cannot reconstruct (explicit `id` diverging from the path, or schema placement deviating from hierarchy-canonical nesting) carries a `dcterms:source "<path>.md"` triple; on ingest that triple is consumed into file placement and **never** written into frontmatter (§5.4, §5.5).
 - [ ] the generated face (whichever serialization a deployment derives: the `.ttl` when Markdown is source, the Markdown when Turtle is source) is treated as read-only; edits go to the source of truth and are regenerated.
 - [ ] body text is never emitted as RDF, and a generator that produces the Markdown face **MUST** preserve existing bodies rather than clobber them on regeneration.
 

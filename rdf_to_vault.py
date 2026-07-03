@@ -44,7 +44,7 @@ from urllib.parse import unquote
 
 import yaml
 from rdflib import BNode, Graph, Literal, URIRef
-from rdflib.namespace import RDF
+from rdflib.namespace import DCTERMS, RDF
 
 from vault_to_rdf import (
     EXPECTED_CLASS,
@@ -277,6 +277,36 @@ def norm(v):
 # The ingest
 # ---------------------------------------------------------------------------
 
+def governing_base(path: Path, vault: Path, root_base: str,
+                   warnings: list[str]) -> tuple[str, Path]:
+    """The (base, folder) of the nearest context.jsonld at or above a note
+    (SPEC §4.5). Falls back to the vault base when none is on disk yet."""
+    d = path.parent
+    while d != vault and not (d / "context.jsonld").exists():
+        d = d.parent
+    if (d / "context.jsonld").exists():
+        base = context_base(d / "context.jsonld", warnings)
+        if base:
+            return base, d
+    return root_base, vault
+
+
+def minted_iri(path: Path, vault: Path, root_base: str,
+               warnings: list[str]) -> tuple[str, str]:
+    """(minted IRI, governing base) for a note's location, exactly as the
+    forward direction mints identity (SPEC §4.5): schema notes from the file
+    name under their ontology's @base, instances from the context-relative
+    file path under the governing @base, each segment percent-encoded."""
+    layer, _ = locate(path, vault)
+    if layer == "data":
+        base, folder = governing_base(path, vault, root_base, warnings)
+        rel = path.relative_to(folder).with_suffix("")
+        return base + "/".join(iri_safe(seg) for seg in rel.parts), base
+    gov, _name = governing(path, vault)
+    base = context_base(gov.parent / "context.jsonld", warnings) or ""
+    return base + iri_safe(path.stem), base
+
+
 def classify(type_iris: set[str]) -> str:
     if type_iris & EXPECTED_ONTOLOGY:
         return "ontology"
@@ -291,7 +321,7 @@ def classify(type_iris: set[str]) -> str:
     return "instance"
 
 
-def scan_existing_notes(vault: Path, ctx: Context, data_ns: str,
+def scan_existing_notes(vault: Path, ctx: Context, root_base: str,
                         warnings: list[str]) -> dict[str, Path]:
     """Map every existing note's subject IRI to its path, minting identity
     exactly as the forward direction does (SPEC §4.5).
@@ -305,15 +335,12 @@ def scan_existing_notes(vault: Path, ctx: Context, data_ns: str,
         return by_iri
     for path in sorted(vault.rglob("*.md")):
         fm = canonical_keywords(parse_frontmatter(path) or {}, ctx)
-        layer, _ = locate(path, vault)
+        minted, base = minted_iri(path, vault, root_base, warnings)
         if "@id" in fm:
-            iri = ctx.expand_curie(str(fm["@id"]))
-        elif layer == "data":
-            iri = data_ns + iri_safe(path.stem)
+            token = str(fm["@id"]).strip()
+            iri = token if token.startswith(("http://", "https://")) else base + token
         else:
-            gov, name = governing(path, vault)
-            base = context_base(gov.parent / "context.jsonld", warnings) or ""
-            iri = base + iri_safe(path.stem)
+            iri = minted
         if iri in by_iri:
             warnings.append(f"notes {by_iri[iri]} and {path} both identify <{iri}> "
                             f"— updates go to the former")
@@ -330,12 +357,15 @@ def main() -> int:
     ap.add_argument("--context", type=Path, default=None,
                     help="root context document (default: <vault>/context.jsonld; "
                          "synthesized when neither exists)")
-    ap.add_argument("--data-ns", default="https://example.org/data/",
-                    help="instance-layer namespace IRI")
+    ap.add_argument("--data-ns", default=None,
+                    help="explicit vault-root base for instance-layer subjects; replaces "
+                         "the root context's @base only — a data folder's own "
+                         "context.jsonld still governs its subtree (default: the root "
+                         "context's @base; also the @base of a synthesized context)")
     args = ap.parse_args()
 
     vault: Path = args.vault
-    data_ns: str = args.data_ns
+    data_ns: str = args.data_ns or "https://example.org/data/"
     warnings: list[str] = []
 
     # ---- Load the graph(s).
@@ -373,6 +403,11 @@ def main() -> int:
         root_editor = ContextEditor(root_target, initial=dict(core))
         warnings.append(f"no context found — synthesizing {root_target}")
 
+    # Instances mint against the @base of their governing context (§4.5).
+    # --data-ns, when given, replaces only the *vault-root* base at the top of
+    # that walk; a data folder's own context.jsonld still governs its subtree.
+    root_base = args.data_ns or ctx.base or data_ns
+
     # ---- Reverse maps: predicate IRI -> (short name, term definition).
     pred_to_term: dict[str, tuple[str, dict]] = {}
     for name, tdef in ctx.terms.items():
@@ -404,6 +439,14 @@ def main() -> int:
     types_of = {s: {str(o) for o in g.objects(s, RDF.type) if isinstance(o, URIRef)}
                 for s in subjects}
     kind_of = {s: classify(types_of[s]) for s in subjects}
+
+    # dcterms:source path hints: the true, context-relative path of a pinned
+    # note (SPEC §5.4 step 7). Consumed for file placement, never rendered
+    # into frontmatter (§5.5.1) — on the vault side the path IS the location.
+    path_hint: dict[str, str] = {}
+    for s, o in g.subject_objects(DCTERMS.source):
+        if isinstance(s, URIRef) and isinstance(o, Literal) and str(o).endswith(".md"):
+            path_hint[str(s)] = str(o)
 
     # ---- Namespace -> folder. Existing folders first, then the graph's
     # ontology/scheme subjects, then derived names for orphan namespaces.
@@ -450,8 +493,17 @@ def main() -> int:
 
     # ---- Existing notes: subject IRI -> path. Structure preservation and
     # wiki-link resolution both key off this.
-    existing_by_iri = scan_existing_notes(vault, ctx, data_ns, warnings)
+    existing_by_iri = scan_existing_notes(vault, ctx, root_base, warnings)
     existing_path_iri = {p: i for i, p in existing_by_iri.items()}
+
+    def context_folder_for(iri: str) -> Path:
+        """The folder of the context whose @base most specifically prefixes an
+        IRI — where a dcterms:source path hint is resolved from (§5.5.1)."""
+        best_len, best = (len(root_base), vault) if iri.startswith(root_base) else (-1, vault)
+        for b, (kd, name) in ns_to_folder.items():
+            if iri.startswith(b) and len(b) > best_len:
+                best_len, best = len(b), vault / kd / name
+        return best
 
     # ---- Assign each subject a path (existing note wins) and a stem.
     # Two subjects may share a note *name* (links to them go path-qualified,
@@ -480,16 +532,48 @@ def main() -> int:
                             f"'{path.stem}' with an explicit @id")
         return path
 
+    RDFS_SUBCLASS = URIRef(RDFS + "subClassOf")
+    SKOS_BROADER = URIRef(SKOS + "broader")
+    SKOS_TOPCONCEPT = URIRef(SKOS + "topConceptOf")
+
+    def parent_chain(s: URIRef, rel_pred: URIRef, ns: str) -> list[str]:
+        """Stems of the single-local-parent chain above a subject, topmost
+        first — the hierarchy-canonical nesting of SPEC §5.2. The chain
+        follows exactly one parent per step, and only parents minted in the
+        same namespace that this ingest is materialising."""
+        segs: list[str] = []
+        seen = {s}
+        cur = s
+        while True:
+            parents = [o for o in g.objects(cur, rel_pred)
+                       if isinstance(o, URIRef) and o in types_of
+                       and split_iri(str(o))[0] == ns]
+            if len(parents) != 1 or parents[0] in seen:
+                break
+            cur = parents[0]
+            seen.add(cur)
+            segs.append(sanitize_stem(split_iri(str(cur))[1]))
+        return list(reversed(segs))
+
     for s in subjects:
         iri = str(s)
         kind = kind_of[s]
         ns, local = split_iri(iri)
-        if kind == "instance" and iri.startswith(data_ns):
-            local = iri[len(data_ns):]
         stem = sanitize_stem(local) if local else derive_folder_name(ns)
 
         if iri in existing_by_iri:
             path = existing_by_iri[iri]
+            folder = None
+        elif iri in path_hint:
+            # a pinned note's true path, relative to its governing context
+            path = free_path(context_folder_for(iri) / path_hint[iri], iri)
+            folder = None
+        elif kind == "instance" and iri.startswith(root_base):
+            # an unpinned instance IRI encodes its vault-relative path (§4.5)
+            parts = [sanitize_stem(p) for p in iri[len(root_base):].split("/") if p]
+            stem = parts[-1] if parts else stem
+            target = vault.joinpath(*parts[:-1], f"{stem}.md") if parts else vault / f"{stem}.md"
+            path = free_path(target, iri)
             folder = None
         elif kind == "instance":
             type_stems = sorted(
@@ -499,11 +583,20 @@ def main() -> int:
             folder = None
         else:
             kind_dir, name = folder_for(s)
-            sub = {"class": "Classes", "property": "Properties"}.get(kind)
             if kind in ("ontology", "scheme"):
                 path = vault / kind_dir / name / f"{name}.md"
-            elif kind_dir == "Ontologies" and sub:
-                path = vault / kind_dir / name / sub / f"{stem}.md"
+            elif kind == "class":
+                # hierarchy-canonical nesting (§5.2): under the single-local-
+                # parent chain, flat when there is none or several
+                chain = parent_chain(s, RDFS_SUBCLASS, ns)
+                path = vault.joinpath(kind_dir, name, "Classes", *chain, f"{stem}.md")
+            elif kind == "property":
+                path = vault / kind_dir / name / "Properties" / f"{stem}.md"
+            elif kind == "concept":
+                # a top concept sits at the vocabulary's top level (§5.2)
+                chain = ([] if (s, SKOS_TOPCONCEPT, None) in g
+                         else parent_chain(s, SKOS_BROADER, ns))
+                path = vault.joinpath(kind_dir, name, *chain, f"{stem}.md")
             else:
                 path = vault / kind_dir / name / f"{stem}.md"
             path = free_path(path, iri)
@@ -671,21 +764,26 @@ def main() -> int:
             body = "\n"
         old_fm = canonical_keywords(old_fm or {}, ctx)
 
-        # explicit @id whenever file-name minting (SPEC §4.5, as the forward
+        # explicit id whenever location minting (SPEC §4.5, as the forward
         # direction performs it — percent-encoded) would not reproduce the
-        # subject's IRI
-        layer, _ = locate(path, vault)
-        if layer == "data":
-            minted = data_ns + iri_safe(stem)
-        else:
-            gov, _name = governing(path, vault)
-            minted = (context_base(gov.parent / "context.jsonld", warnings) or "") + iri_safe(stem)
+        # subject's IRI. The pin is the base-relative remainder, so export
+        # flattens it back to the same IRI.
+        minted, base = minted_iri(path, vault, root_base, warnings)
 
         new_fm: dict = {}
         if minted != iri:
-            new_fm["@id"] = curie(iri)
-        elif "@id" in old_fm and ctx.expand_curie(str(old_fm["@id"])) == iri:
-            new_fm["@id"] = old_fm["@id"]  # a valid explicit pin — keep it
+            if base and iri.startswith(base):
+                new_fm["@id"] = iri[len(base):]
+            else:
+                new_fm["@id"] = iri
+                warnings.append(f"{path.name}: {iri} lies outside its governing @base "
+                                f"{base or '(none)'} — pinned with an absolute id "
+                                f"(non-conforming, SPEC §4.5)")
+        elif "@id" in old_fm:
+            token = str(old_fm["@id"]).strip()
+            resolved = token if token.startswith(("http://", "https://")) else base + token
+            if resolved == iri:
+                new_fm["@id"] = old_fm["@id"]  # a valid explicit pin — keep it
 
         type_vals = sorted(link_for(t) or curie(t) for t in types_of[s])
         if type_vals:
@@ -695,6 +793,11 @@ def main() -> int:
         rendered: list[tuple[str, dict, object]] = []
         for p in preds:
             objs = sorted(g.objects(s, p), key=str)
+            if p == DCTERMS.source and iri in path_hint:
+                # the consumed path hint dissolves into the file's location
+                objs = [o for o in objs if str(o) != path_hint[iri]]
+                if not objs:
+                    continue
             name, tdef = term_for(p, objs)
             vals = [v for o in objs if (v := render_value(o, tdef.get("@type"))) is not None]
             if not vals:

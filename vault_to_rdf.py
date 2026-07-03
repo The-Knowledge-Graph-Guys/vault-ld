@@ -6,10 +6,11 @@ Walks a vault of Markdown notes (per the Vault-LD SPEC), reads each note's
 YAML frontmatter as YAML-LD through the shared context.jsonld, and emits two
 Turtle files:
 
-    schema.ttl   the schema layer  — classes, properties, ontologies, concepts
-                 minted in the schema namespace (default https://example.org/schema/)
-    data.ttl     the instance layer — typed notes (recipes, ingredients, ...)
-                 minted in the data namespace   (default https://example.org/data/)
+    schema.ttl   the schema layer  — classes, properties, ontologies, concepts,
+                 each minted from its file name under its ontology's own @base
+    data.ttl     the instance layer — typed notes (recipes, ingredients, ...),
+                 each minted from its context-relative file path under the
+                 governing context's @base (SPEC §4.5)
 
 A note is schema-layer when its `@type` is a CURIE (owl:Class, skos:Concept, ...)
 and instance-layer when its `@type` is a wiki link ("[[Recipe]]"), matching the
@@ -30,8 +31,8 @@ from pathlib import Path
 import yaml
 from urllib.parse import quote
 
-from rdflib import Graph, Literal, Namespace, URIRef
-from rdflib.namespace import RDF
+from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import DCTERMS, RDF
 
 # Host-editor keys are affordances of the editing surface, not triples
 # (SPEC §4.3): when unmapped, never emitted and never warned about. A context
@@ -258,9 +259,9 @@ def locate(path: Path, vault: Path) -> tuple[str, set[str] | None]:
     parent = path.parent.name
 
     if "Ontologies" in parts:
-        if parent == "Classes":
+        if "Classes" in parts:       # possibly nested by hierarchy (SPEC §5.2)
             return "schema", EXPECTED_CLASS
-        if parent == "Properties":
+        if "Properties" in parts:
             return "schema", EXPECTED_PROPERTY
         # the ontology resource itself: file sits directly in its named folder
         return "schema", EXPECTED_ONTOLOGY
@@ -301,8 +302,11 @@ def main() -> int:
                     help="directory to write schema.ttl and data.ttl (default: .)")
     ap.add_argument("--schema-ns", default="https://example.org/schema/",
                     help="schema namespace IRI")
-    ap.add_argument("--data-ns", default="https://example.org/data/",
-                    help="data namespace IRI")
+    ap.add_argument("--data-ns", default=None,
+                    help="explicit vault-root base for instance-layer subjects; replaces "
+                         "the root context's @base only — a data folder's own "
+                         "context.jsonld still governs its subtree (default: the root "
+                         "context's @base)")
     args = ap.parse_args()
 
     vault: Path = args.vault
@@ -313,7 +317,16 @@ def main() -> int:
 
     warnings: list[str] = []
     ctx = load_context(context_path, warnings)
-    DATA = Namespace(args.data_ns)
+    # Instance identity resolves against the @base of the governing context
+    # (SPEC §4.5). --data-ns, when given, replaces only the *vault-root* base
+    # at the top of that walk; a data folder's own context.jsonld still
+    # governs its subtree, so id flattening and dcterms:source paths keep
+    # their bases either way.
+    root_base = args.data_ns or ctx.base
+    if not root_base:
+        root_base = "https://example.org/data/"
+        warnings.append("root context declares no @base and no --data-ns given — "
+                        "instances minted under https://example.org/data/")
 
     # ---- Pass 1a: discover every note and its layer.
     discovered: list[tuple[Path, dict, str, set[str] | None]] = []
@@ -339,27 +352,55 @@ def main() -> int:
             onto_base[onto_dir] = base
         return onto_base[onto_dir]
 
+    def governing_for(path: Path, layer: str) -> tuple[str, Path]:
+        """The (base, folder) of the note's governing context (SPEC §4.5):
+        a schema note's ontology/vocabulary context, otherwise the nearest
+        context.jsonld at or above the note — the vault root in the end."""
+        if layer == "schema":
+            gov_path, name = governing(path, vault)
+            return base_for(gov_path, name), gov_path.parent
+        d = path.parent
+        while d != vault and not (d / "context.jsonld").exists():
+            d = d.parent
+        if d == vault:
+            return root_base, vault
+        return context_base(d / "context.jsonld", warnings) or root_base, d
+
+    def minted_iri(path: Path, layer: str) -> str:
+        """Identity from location (SPEC §4.5): schema notes mint from the file
+        name alone (Classes/ and Properties/ never enter the IRI); instances
+        mint from the path relative to their governing context's folder, each
+        segment percent-encoded."""
+        base, folder = governing_for(path, layer)
+        if layer == "data":
+            rel = path.relative_to(folder).with_suffix("")
+            return base + "/".join(iri_safe(seg) for seg in rel.parts)
+        return base + iri_safe(path.stem)
+
     def subject_iri(path: Path, fm: dict, layer: str) -> URIRef:
         if "@id" in fm:
-            return URIRef(ctx.expand_curie(str(fm["@id"])))
-        if layer == "data":
-            return URIRef(DATA[iri_safe(path.stem)])
-        # schema layer: resolve the file name against the ontology's scoped
-        # @base (SPEC §4.2 scoped-base rule, §4.5, §5.4).
-        gov_path, name = governing(path, vault)
-        base = base_for(gov_path, name)
-        return URIRef(base + iri_safe(path.stem))
+            token = str(fm["@id"]).strip()
+            if token.startswith(("http://", "https://")):
+                warnings.append(f"{path.name}: id '{token}' is absolute — SPEC §4.5 "
+                                f"requires a relative reference (flattened to base + id); "
+                                f"used verbatim")
+                return URIRef(token)
+            base, _ = governing_for(path, layer)
+            return URIRef(base + token)
+        return URIRef(minted_iri(path, layer))
 
     # ---- Pass 1b: mint each subject and index it by note name AND by
     # vault-relative path, so a path-qualified link can select among
     # same-named notes (SPEC §4.4.1).
-    notes: list[tuple[Path, dict, str, URIRef]] = []
+    notes: list[tuple[Path, dict, str, URIRef, set[str] | None]] = []
     subject_by_name: dict[str, URIRef] = {}
     subject_by_relpath: dict[str, URIRef] = {}
     first_by_name: dict[str, tuple[Path, URIRef]] = {}
+    fm_by_path: dict[Path, dict] = {}
     for path, fm, layer, expected in discovered:
         subj = subject_iri(path, fm, layer)
-        notes.append((path, fm, layer, subj))
+        notes.append((path, fm, layer, subj, expected))
+        fm_by_path[path] = fm
         rel = path.relative_to(vault).with_suffix("").as_posix()
         subject_by_relpath[rel] = subj
         if path.stem in first_by_name:
@@ -412,10 +453,84 @@ def main() -> int:
                                 f"— resolved by note name instead")
             iri = subject_by_name.get(name)
             if iri is None:
-                warnings.append(f"dangling wiki link [[{name}]] -> minted in data namespace")
-                return URIRef(DATA[iri_safe(name)])
+                warnings.append(f"dangling wiki link [[{name}]] -> minted under the vault base")
+                return URIRef(root_base + iri_safe(name))
             return iri
         return URIRef(ctx.expand_curie(token))
+
+    # ---- Folder-derived hierarchy (SPEC §5.2): placement speaks only where
+    # frontmatter is silent; frontmatter wins and visible disagreement warns.
+    RDFS_SUBCLASS = URIRef(RDFS + "subClassOf")
+    SKOS_BROADER = URIRef(SKOS + "broader")
+    SKOS_TOPCONCEPT = URIRef(SKOS + "topConceptOf")
+
+    def wl_targets(fm: dict, field: str) -> list[str]:
+        vals = fm.get(field)
+        if vals is None:
+            return []
+        vals = vals if isinstance(vals, list) else [vals]
+        return [wikilink_name(str(v)) for v in vals if is_wikilink(str(v))]
+
+    def inferred_hierarchy(path: Path, fm: dict, expected) -> list[tuple[URIRef, URIRef]]:
+        gov_path, name = governing(path, vault)
+        parent = path.parent.name
+        if expected is EXPECTED_CLASS and parent != "Classes":
+            if fm.get("subClassOf") is None:
+                return [(RDFS_SUBCLASS, resolve_iri(f"[[{parent}]]"))]
+            if parent not in wl_targets(fm, "subClassOf"):
+                warnings.append(f"{path.name}: nested under {parent}/ but subClassOf "
+                                f"does not mention [[{parent}]] — frontmatter wins (SPEC §5.2)")
+        elif expected is EXPECTED_CONCEPT:
+            if fm.get("broader") is None and fm.get("topConceptOf") is None:
+                if parent == name:  # directly in the vocabulary folder: a top concept
+                    return [(SKOS_TOPCONCEPT, resolve_iri(f"[[{name}]]"))]
+                return [(SKOS_BROADER, resolve_iri(f"[[{parent}]]"))]
+            if parent != name and parent not in wl_targets(fm, "broader"):
+                warnings.append(f"{path.name}: nested under {parent}/ but broader "
+                                f"does not mention [[{parent}]] — frontmatter wins (SPEC §5.2)")
+        return []
+
+    def effective_parents(path: Path, fm: dict, expected, gov_folder: Path) -> list[str]:
+        """Local parents that count for canonical placement (§5.2): declared
+        wiki-link parents inside the same governing folder, or the folder-
+        inferred parent when frontmatter is silent."""
+        if expected is EXPECTED_CONCEPT and fm.get("topConceptOf") is not None:
+            return []
+        field = "subClassOf" if expected is EXPECTED_CLASS else "broader"
+        names = wl_targets(fm, field)
+        if fm.get(field) is None:
+            parent = path.parent.name
+            anchored = "Classes" if expected is EXPECTED_CLASS else gov_folder.name
+            if parent != anchored:
+                names = [parent]
+        return [n for n in names
+                if n in first_by_name and first_by_name[n][0].is_relative_to(gov_folder)]
+
+    def canonical_rel(path: Path, fm: dict, expected) -> str:
+        """The hierarchy-canonical path of a schema note, relative to its
+        governing folder (§5.2): nested under its single-local-parent chain;
+        flat when it has none, several, or only external parents."""
+        gov_path, _name = governing(path, vault)
+        gov_folder = gov_path.parent
+        if expected in (EXPECTED_ONTOLOGY, EXPECTED_SCHEME) or expected is None:
+            return path.name
+        if expected is EXPECTED_PROPERTY:
+            return f"Properties/{path.name}"
+        segs: list[str] = []
+        seen: set[str] = {path.stem}
+        cur_path, cur_fm = path, fm
+        while True:
+            parents = effective_parents(cur_path, cur_fm, expected, gov_folder)
+            if len(parents) != 1 or parents[0] in seen:
+                break
+            p = parents[0]
+            seen.add(p)
+            segs.append(p)
+            cur_path = first_by_name[p][0]
+            cur_fm = fm_by_path.get(cur_path, {})
+        prefix = "Classes/" if expected is EXPECTED_CLASS else ""
+        chain = "/".join(reversed(segs))
+        return prefix + (chain + "/" if chain else "") + path.name
 
     # ---- Build two graphs, binding every prefix the context declares
     # (owl, rdfs, skos, xsd, sdo, and each ontology's own — cul, diff, ...).
@@ -423,10 +538,32 @@ def main() -> int:
     for g in (g_schema, g_data):
         for prefix, ns in ctx.prefixes.items():
             g.bind(prefix, ns)
-        g.bind("data", DATA)
+        g.bind("dcterms", DCTERMS)
+        # data: names the instance base for condensed output. Turtle can't
+        # compact a local name containing '/', so only flat, root-level
+        # instances benefit; nested instances serialize as full IRIs.
+        g.bind("data", root_base)
 
-    for path, fm, layer, subj in notes:
+    for path, fm, layer, subj, expected in notes:
         g = g_schema if layer == "schema" else g_data
+
+        # dcterms:source carries the true path of every note whose location an
+        # ingester could not reconstruct from the graph (§5.4 step 7): a pinned
+        # instance whose IRI no longer encodes its path, or a schema note whose
+        # placement deviates from the hierarchy-canonical nesting of §5.2.
+        _, folder = governing_for(path, layer)
+        rel_actual = path.relative_to(folder).as_posix()
+        if layer == "data":
+            divergent = "@id" in fm and str(subj) != minted_iri(path, layer)
+        else:
+            divergent = rel_actual != canonical_rel(path, fm, expected)
+        if divergent:
+            g.add((subj, DCTERMS.source, Literal(rel_actual)))
+
+        # placement-derived hierarchy, read only where frontmatter is silent
+        if layer == "schema":
+            for pred, target in inferred_hierarchy(path, fm, expected):
+                g.add((subj, pred, target))
 
         for key, raw in fm.items():
             if key == "@id":
