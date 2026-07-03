@@ -1,7 +1,7 @@
 # Exporting a Vault to RDF — `vault_to_rdf.py`
 
 `vault_to_rdf.py` projects a Vault-LD vault (a directory of Markdown notes, per
-the [SPEC](SPEC.md)) into RDF. It reads each note's YAML frontmatter as YAML-LD
+the [SPEC](../SPEC.md)) into RDF. It reads each note's YAML frontmatter as YAML-LD
 through the vault's composed `@context`, then emits **two Turtle files split by
 layer**:
 
@@ -27,13 +27,13 @@ pip install rdflib pyyaml
 ## Usage
 
 ```sh
-python vault_to_rdf.py <vault> [--context PATH] [--out-dir DIR] [--schema-ns IRI] [--data-ns IRI]
+python scripts/vault_to_rdf.py <vault> [--context PATH] [--out-dir DIR] [--schema-ns IRI] [--data-ns IRI]
 ```
 
 Run against the bundled example vault:
 
 ```sh
-python vault_to_rdf.py "Vault-LD Example" --out-dir build
+python scripts/vault_to_rdf.py "Vault-LD Example" --out-dir build
 ```
 
 | Flag | Default | Meaning |

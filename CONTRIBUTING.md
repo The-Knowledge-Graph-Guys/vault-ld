@@ -14,7 +14,7 @@ Please **open an issue first** using the *Spec change proposal* template. Normat
 
 Once there's rough consensus on the issue, submit a pull request.
 
-**2. Everything else.** The reference tools (`vault_to_rdf.py`, `rdf_to_vault.py`), the example vault, the guides (`EXPORT.md`, `INGEST.md`), the README, typos, broken links: a direct pull request is fine, no issue needed.
+**2. Everything else.** The reference tools (`scripts/vault_to_rdf.py`, `scripts/rdf_to_vault.py`), the example vault, the guides (`EXPORT.md`, `INGEST.md`), the README, typos, broken links: a direct pull request is fine, no issue needed.
 
 ## How to submit a pull request
 
@@ -28,9 +28,9 @@ Once there's rough consensus on the issue, submit a pull request.
 
    ```sh
    pip install rdflib pyyaml
-   python vault_to_rdf.py "Vault-LD Example" --out-dir build
-   python rdf_to_vault.py RoundtripVault build/schema.ttl
-   python rdf_to_vault.py RoundtripVault build/data.ttl
+   python scripts/vault_to_rdf.py "Vault-LD Example" --out-dir build
+   python scripts/rdf_to_vault.py RoundtripVault build/schema.ttl
+   python scripts/rdf_to_vault.py RoundtripVault build/data.ttl
    ```
 
    Vault to RDF back to vault must be a no-op, and RDF to vault back to RDF must be graph-isomorphic (SPEC §5).

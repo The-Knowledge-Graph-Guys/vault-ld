@@ -17,8 +17,8 @@ and instance-layer when its `@type` is a wiki link ("[[Recipe]]"), matching the
 distinction drawn in SPEC §4.6.
 
 Usage:
-    python vault_to_rdf.py "Vault-LD Example"
-    python vault_to_rdf.py VAULT --context VAULT/context.jsonld --out-dir build
+    python scripts/vault_to_rdf.py "Vault-LD Example"
+    python scripts/vault_to_rdf.py VAULT --context VAULT/context.jsonld --out-dir build
 """
 
 from __future__ import annotations

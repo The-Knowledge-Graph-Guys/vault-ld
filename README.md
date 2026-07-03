@@ -16,12 +16,12 @@ Both directions work because of the **roundtrip**. Since the frontmatter is YAML
 
 - **[SPEC.md](SPEC.md)**: the normative reference. It defines how frontmatter becomes a knowledge graph (§4) and how any RDF graph round-trips through the vault format with full fidelity (§5), along with terminology, directory structure, conformance criteria, and a compatibility profile for lifting OKF-style Markdown bundles into linked data (Appendix B).
 - **`Vault-LD Example/`**: a complete, copyable vault that demonstrates every rule in the spec. It holds one ontology (`Culinary`), one controlled vocabulary (`Difficulty Levels`), and one instance (`hummus`). Its root `context.jsonld` composes the Culinary ontology's own context, showing how multiple contexts compose (SPEC §4.2).
-- **`vault_to_rdf.py`**: a reference exporter that projects a vault to RDF — see [Exporting to RDF](#exporting-to-rdf) below.
-- **`rdf_to_vault.py`**: the reference ingester running the other way, RDF → vault — see [Ingesting RDF](#ingesting-rdf) below. Together the two tools close the roundtrip.
+- **`scripts/vault_to_rdf.py`**: a reference exporter that projects a vault to RDF — see [Exporting to RDF](#exporting-to-rdf) below.
+- **`scripts/rdf_to_vault.py`**: the reference ingester running the other way, RDF → vault — see [Ingesting RDF](#ingesting-rdf) below. Together the two tools close the roundtrip.
 
 ## Exporting to RDF
 
-The repo ships `vault_to_rdf.py`, a small Python tool that reads a vault and emits Turtle, split by layer into two files:
+The repo ships `scripts/vault_to_rdf.py`, a small Python tool that reads a vault and emits Turtle, split by layer into two files:
 
 - `schema.ttl` — the schema layer (classes, properties, concepts), each ontology in its own namespace (`cul:`, `diff:`, …),
 - `data.ttl` — the instance layer (typed notes) under the vault base, each IRI minted from the note's vault-relative path.
@@ -29,20 +29,20 @@ The repo ships `vault_to_rdf.py`, a small Python tool that reads a vault and emi
 It classifies each note by its folder, mints each subject under the `@base` of its governing context (schema notes from their file name, instances from their vault-relative path — SPEC §4.5), resolves frontmatter through the vault's composed `@context`, and flags anything it can't map rather than dropping it. Export the example vault to `build/` in one line:
 
 ```sh
-pip install rdflib pyyaml && python vault_to_rdf.py "Vault-LD Example" --out-dir build
+pip install rdflib pyyaml && python scripts/vault_to_rdf.py "Vault-LD Example" --out-dir build
 ```
 
-See **[EXPORT.md](EXPORT.md)** for the full usage guide, flags, and how layer classification and context composition work.
+See **[EXPORT.md](scripts/EXPORT.md)** for the full usage guide, flags, and how layer classification and context composition work.
 
 ## Ingesting RDF
 
-The reverse direction, `rdf_to_vault.py`, projects any RDF graph *into* the vault format (SPEC §5.5) — one note per subject, hierarchy in frontmatter, IRI objects as wiki links. Point it at an existing vault and it updates notes **in place**, preserving bodies, `tags:`, and folder structure, and leaving unchanged notes untouched; point it at an empty directory and it builds the whole vault, synthesizing a composed `context.jsonld` when none exists. Predicates the context doesn't map get a short name coined and added to the right context document; anything the format can't express (blank nodes, language tags) is flagged, never dropped (SPEC §5.6). Import a foreign ontology in one line:
+The reverse direction, `scripts/rdf_to_vault.py`, projects any RDF graph *into* the vault format (SPEC §5.5) — one note per subject, hierarchy in frontmatter, IRI objects as wiki links. Point it at an existing vault and it updates notes **in place**, preserving bodies, `tags:`, and folder structure, and leaving unchanged notes untouched; point it at an empty directory and it builds the whole vault, synthesizing a composed `context.jsonld` when none exists. Predicates the context doesn't map get a short name coined and added to the right context document; anything the format can't express (blank nodes, language tags) is flagged, never dropped (SPEC §5.6). Import a foreign ontology in one line:
 
 ```sh
-python rdf_to_vault.py MyVault foreign-ontology.ttl
+python scripts/rdf_to_vault.py MyVault foreign-ontology.ttl
 ```
 
-See **[INGEST.md](INGEST.md)** for the full usage guide and the fidelity rules. Because the two tools are inverses, `vault → RDF → vault` is a no-op and `RDF → vault → RDF` is graph-isomorphic.
+See **[INGEST.md](scripts/INGEST.md)** for the full usage guide and the fidelity rules. Because the two tools are inverses, `vault → RDF → vault` is a no-op and `RDF → vault → RDF` is graph-isomorphic.
 
 ## A taste
 

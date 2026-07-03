@@ -26,9 +26,9 @@ Fidelity rules honoured (SPEC §5.5, §5.6, §6):
   - a note whose frontmatter would not change is not rewritten at all.
 
 Usage:
-    python rdf_to_vault.py VAULT schema.ttl data.ttl
-    python rdf_to_vault.py NewVault graph.ttl            # no context: one is synthesized
-    python rdf_to_vault.py VAULT g.ttl --context other/context.jsonld --data-ns https://example.org/data/
+    python scripts/rdf_to_vault.py VAULT schema.ttl data.ttl
+    python scripts/rdf_to_vault.py NewVault graph.ttl            # no context: one is synthesized
+    python scripts/rdf_to_vault.py VAULT g.ttl --context other/context.jsonld --data-ns https://example.org/data/
 """
 
 from __future__ import annotations

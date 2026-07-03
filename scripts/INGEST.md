@@ -25,20 +25,20 @@ pip install rdflib pyyaml
 ## Usage
 
 ```sh
-python rdf_to_vault.py <vault> <rdf-file>... [--context PATH] [--data-ns IRI]
+python scripts/rdf_to_vault.py <vault> <rdf-file>... [--context PATH] [--data-ns IRI]
 ```
 
 Round-trip the bundled example:
 
 ```sh
-python vault_to_rdf.py "Vault-LD Example" --out-dir build
-python rdf_to_vault.py "Vault-LD Example" build/schema.ttl build/data.ttl   # → 11 unchanged
+python scripts/vault_to_rdf.py "Vault-LD Example" --out-dir build
+python scripts/rdf_to_vault.py "Vault-LD Example" build/schema.ttl build/data.ttl   # → 11 unchanged
 ```
 
 Import a foreign ontology into a brand-new vault (context synthesized):
 
 ```sh
-python rdf_to_vault.py MyVault foreign-ontology.ttl
+python scripts/rdf_to_vault.py MyVault foreign-ontology.ttl
 ```
 
 | Flag | Default | Meaning |
