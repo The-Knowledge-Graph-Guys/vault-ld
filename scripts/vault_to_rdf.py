@@ -32,7 +32,12 @@ import yaml
 from urllib.parse import quote
 
 from rdflib import Graph, Literal, URIRef
-from rdflib.namespace import DCTERMS, RDF
+from rdflib.namespace import RDF
+
+# Vault-LD's own tiny vocabulary (SPEC §5.4 step 7): vld:path is its only
+# term — a plain string-valued property carrying a context-relative file path.
+VLD = "https://github.com/The-Knowledge-Graph-Guys/vault-ld#"
+VLD_PATH = URIRef(VLD + "path")
 
 # Host-editor keys are affordances of the editing surface, not triples
 # (SPEC §4.3): when unmapped, never emitted and never warned about. A context
@@ -302,6 +307,11 @@ def main() -> int:
                     help="directory to write schema.ttl and data.ttl (default: .)")
     ap.add_argument("--schema-ns", default="https://example.org/schema/",
                     help="schema namespace IRI")
+    ap.add_argument("--source", action="store_true",
+                    help="emit vld:path placement triples (SPEC §5.4 step 7) so "
+                         "the export is a roundtrip face and file placement survives "
+                         "an ingest; without it the output is a lean, read-only "
+                         "artifact for querying (the default use)")
     ap.add_argument("--data-ns", default=None,
                     help="explicit vault-root base for instance-layer subjects; replaces "
                          "the root context's @base only — a data folder's own "
@@ -320,8 +330,8 @@ def main() -> int:
     # Instance identity resolves against the @base of the governing context
     # (SPEC §4.5). --data-ns, when given, replaces only the *vault-root* base
     # at the top of that walk; a data folder's own context.jsonld still
-    # governs its subtree, so id flattening and dcterms:source paths keep
-    # their bases either way.
+    # governs its subtree, so minting and vld:path paths keep their
+    # bases either way.
     root_base = args.data_ns or ctx.base
     if not root_base:
         root_base = "https://example.org/data/"
@@ -367,26 +377,21 @@ def main() -> int:
         return context_base(d / "context.jsonld", warnings) or root_base, d
 
     def minted_iri(path: Path, layer: str) -> str:
-        """Identity from location (SPEC §4.5): schema notes mint from the file
-        name alone (Classes/ and Properties/ never enter the IRI); instances
-        mint from the path relative to their governing context's folder, each
-        segment percent-encoded."""
-        base, folder = governing_for(path, layer)
-        if layer == "data":
-            rel = path.relative_to(folder).with_suffix("")
-            return base + "/".join(iri_safe(seg) for seg in rel.parts)
+        """Identity from the file name alone (SPEC §4.5): base + stem,
+        percent-encoded. Folders never enter any IRI — a note's location
+        travels as vld:path instead (§5.4 step 7)."""
+        base, _ = governing_for(path, layer)
         return base + iri_safe(path.stem)
 
     def subject_iri(path: Path, fm: dict, layer: str) -> URIRef:
         if "@id" in fm:
             token = str(fm["@id"]).strip()
-            if token.startswith(("http://", "https://")):
-                warnings.append(f"{path.name}: id '{token}' is absolute — SPEC §4.5 "
-                                f"requires a relative reference (flattened to base + id); "
-                                f"used verbatim")
-                return URIRef(token)
-            base, _ = governing_for(path, layer)
-            return URIRef(base + token)
+            if not token.startswith(("http://", "https://")):
+                warnings.append(f"{path.name}: id '{token}' is not absolute — SPEC §4.5 "
+                                f"requires a full http(s) IRI; flattened to base + id")
+                base, _ = governing_for(path, layer)
+                return URIRef(base + token)
+            return URIRef(token)
         return URIRef(minted_iri(path, layer))
 
     # ---- Pass 1b: mint each subject and index it by note name AND by
@@ -396,11 +401,9 @@ def main() -> int:
     subject_by_name: dict[str, URIRef] = {}
     subject_by_relpath: dict[str, URIRef] = {}
     first_by_name: dict[str, tuple[Path, URIRef]] = {}
-    fm_by_path: dict[Path, dict] = {}
     for path, fm, layer, expected in discovered:
         subj = subject_iri(path, fm, layer)
         notes.append((path, fm, layer, subj, expected))
-        fm_by_path[path] = fm
         rel = path.relative_to(vault).with_suffix("").as_posix()
         subject_by_relpath[rel] = subj
         if path.stem in first_by_name:
@@ -413,7 +416,8 @@ def main() -> int:
             else:
                 warnings.append(f"notes {prev_path.relative_to(vault)} and "
                                 f"{path.relative_to(vault)} mint the same IRI <{subj}> — "
-                                f"they will merge into one subject")
+                                f"they will merge into one subject; give one an "
+                                f"explicit absolute id (SPEC §4.5)")
         else:
             first_by_name[path.stem] = (path, subj)
         subject_by_name[path.stem] = subj
@@ -458,79 +462,16 @@ def main() -> int:
             return iri
         return URIRef(ctx.expand_curie(token))
 
-    # ---- Folder-derived hierarchy (SPEC §5.2): placement speaks only where
-    # frontmatter is silent; frontmatter wins and visible disagreement warns.
-    RDFS_SUBCLASS = URIRef(RDFS + "subClassOf")
-    SKOS_BROADER = URIRef(SKOS + "broader")
-    SKOS_TOPCONCEPT = URIRef(SKOS + "topConceptOf")
-
-    def wl_targets(fm: dict, field: str) -> list[str]:
-        vals = fm.get(field)
-        if vals is None:
-            return []
-        vals = vals if isinstance(vals, list) else [vals]
-        return [wikilink_name(str(v)) for v in vals if is_wikilink(str(v))]
-
-    def inferred_hierarchy(path: Path, fm: dict, expected) -> list[tuple[URIRef, URIRef]]:
-        gov_path, name = governing(path, vault)
-        parent = path.parent.name
-        if expected is EXPECTED_CLASS and parent != "Classes":
-            if fm.get("subClassOf") is None:
-                return [(RDFS_SUBCLASS, resolve_iri(f"[[{parent}]]"))]
-            if parent not in wl_targets(fm, "subClassOf"):
-                warnings.append(f"{path.name}: nested under {parent}/ but subClassOf "
-                                f"does not mention [[{parent}]] — frontmatter wins (SPEC §5.2)")
-        elif expected is EXPECTED_CONCEPT:
-            if fm.get("broader") is None and fm.get("topConceptOf") is None:
-                if parent == name:  # directly in the vocabulary folder: a top concept
-                    return [(SKOS_TOPCONCEPT, resolve_iri(f"[[{name}]]"))]
-                return [(SKOS_BROADER, resolve_iri(f"[[{parent}]]"))]
-            if parent != name and parent not in wl_targets(fm, "broader"):
-                warnings.append(f"{path.name}: nested under {parent}/ but broader "
-                                f"does not mention [[{parent}]] — frontmatter wins (SPEC §5.2)")
-        return []
-
-    def effective_parents(path: Path, fm: dict, expected, gov_folder: Path) -> list[str]:
-        """Local parents that count for canonical placement (§5.2): declared
-        wiki-link parents inside the same governing folder, or the folder-
-        inferred parent when frontmatter is silent."""
-        if expected is EXPECTED_CONCEPT and fm.get("topConceptOf") is not None:
-            return []
-        field = "subClassOf" if expected is EXPECTED_CLASS else "broader"
-        names = wl_targets(fm, field)
-        if fm.get(field) is None:
-            parent = path.parent.name
-            anchored = "Classes" if expected is EXPECTED_CLASS else gov_folder.name
-            if parent != anchored:
-                names = [parent]
-        return [n for n in names
-                if n in first_by_name and first_by_name[n][0].is_relative_to(gov_folder)]
-
-    def canonical_rel(path: Path, fm: dict, expected) -> str:
-        """The hierarchy-canonical path of a schema note, relative to its
-        governing folder (§5.2): nested under its single-local-parent chain;
-        flat when it has none, several, or only external parents."""
-        gov_path, _name = governing(path, vault)
-        gov_folder = gov_path.parent
-        if expected in (EXPECTED_ONTOLOGY, EXPECTED_SCHEME) or expected is None:
-            return path.name
+    # ---- Canonical placement (SPEC §5.1): the flat, reconstructable layout —
+    # classes directly in Classes/, properties in Properties/, concepts at the
+    # vocabulary's top level. Anything else (hierarchy nesting included) is
+    # organisational and travels as a vld:path path (§5.4 step 7).
+    def canonical_rel(path: Path, expected) -> str:
+        if expected is EXPECTED_CLASS:
+            return f"Classes/{path.name}"
         if expected is EXPECTED_PROPERTY:
             return f"Properties/{path.name}"
-        segs: list[str] = []
-        seen: set[str] = {path.stem}
-        cur_path, cur_fm = path, fm
-        while True:
-            parents = effective_parents(cur_path, cur_fm, expected, gov_folder)
-            if len(parents) != 1 or parents[0] in seen:
-                break
-            p = parents[0]
-            seen.add(p)
-            segs.append(p)
-            cur_path = first_by_name[p][0]
-            cur_fm = fm_by_path.get(cur_path, {})
-        prefix = "Classes/" if expected is EXPECTED_CLASS else ""
-        chain = "/".join(reversed(segs))
-        return prefix + (chain + "/" if chain else "") + path.name
+        return path.name
 
     # ---- Build two graphs, binding every prefix the context declares
     # (owl, rdfs, skos, xsd, sdo, and each ontology's own — cul, diff, ...).
@@ -538,32 +479,31 @@ def main() -> int:
     for g in (g_schema, g_data):
         for prefix, ns in ctx.prefixes.items():
             g.bind(prefix, ns)
-        g.bind("dcterms", DCTERMS)
-        # data: names the instance base for condensed output. Turtle can't
-        # compact a local name containing '/', so only flat, root-level
-        # instances benefit; nested instances serialize as full IRIs.
+        g.bind("vld", VLD)
+        # data: names the instance base for condensed output. Local names are
+        # file stems (SPEC §4.5), so every unpinned instance compacts.
         g.bind("data", root_base)
 
     for path, fm, layer, subj, expected in notes:
         g = g_schema if layer == "schema" else g_data
 
-        # dcterms:source carries the true path of every note whose location an
-        # ingester could not reconstruct from the graph (§5.4 step 7): a pinned
-        # instance whose IRI no longer encodes its path, or a schema note whose
-        # placement deviates from the hierarchy-canonical nesting of §5.2.
-        _, folder = governing_for(path, layer)
-        rel_actual = path.relative_to(folder).as_posix()
-        if layer == "data":
-            divergent = "@id" in fm and str(subj) != minted_iri(path, layer)
-        else:
-            divergent = rel_actual != canonical_rel(path, fm, expected)
-        if divergent:
-            g.add((subj, DCTERMS.source, Literal(rel_actual)))
-
-        # placement-derived hierarchy, read only where frontmatter is silent
-        if layer == "schema":
-            for pred, target in inferred_hierarchy(path, fm, expected):
-                g.add((subj, pred, target))
+        # --source makes the export a roundtrip face: vld:path carries
+        # the true path of every note whose location an ingester could not
+        # reconstruct from the graph (§5.4 step 7). Identity carries no
+        # location (§4.5), so that is most instances: any one not sitting
+        # directly in its governing context's folder, plus any whose pinned
+        # IRI diverges from name-based minting; for schema notes, anything
+        # away from the flat placement of §5.1. The default output is a lean,
+        # read-only query artifact with no placement bookkeeping.
+        if args.source:
+            _, folder = governing_for(path, layer)
+            rel_actual = path.relative_to(folder).as_posix()
+            if layer == "data":
+                divergent = str(subj) != minted_iri(path, layer) or path.parent != folder
+            else:
+                divergent = rel_actual != canonical_rel(path, expected)
+            if divergent:
+                g.add((subj, VLD_PATH, Literal(rel_actual)))
 
         for key, raw in fm.items():
             if key == "@id":

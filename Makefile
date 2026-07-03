@@ -7,25 +7,42 @@
 #
 #   make roundtrip   runs all four in order
 #   make clean       removes venv-independent outputs
+#
+# The roundtrip targets export with --source (the placement triples that make
+# the .ttl a roundtrip face); plain `make query` produces the default lean,
+# query-only output.
 
 VENV  := venv
-PY    := $(VENV)/bin/python
 VAULT := Vault-LD Example
+
+# venv layout and interpreter name differ per OS: Scripts/ under Windows
+# (native make / Git Bash), bin/ everywhere else.
+ifeq ($(OS),Windows_NT)
+VENVBIN := $(VENV)/Scripts
+SYSPY   := python
+else
+VENVBIN := $(VENV)/bin
+SYSPY   := python3
+endif
+PY := $(VENVBIN)/python
 
 BUILD      := build
 REHYDRATED := rehydratedVault
 REBUILD    := rehydratedVaultBuild
 
-.PHONY: venv export rehydrate rebuild compare roundtrip clean
+.PHONY: venv export query rehydrate rebuild compare roundtrip clean
 
 $(PY): scripts/requirements.txt
-	python3 -m venv $(VENV)
-	$(VENV)/bin/pip install -r scripts/requirements.txt
-	touch $(PY)
+	$(SYSPY) -m venv $(VENV)
+	$(VENVBIN)/pip install -r scripts/requirements.txt
+	touch "$(PY)"
 
 venv: $(PY)
 
 export: venv
+	$(PY) scripts/vault_to_rdf.py "$(VAULT)" --source --out-dir $(BUILD)
+
+query: venv
 	$(PY) scripts/vault_to_rdf.py "$(VAULT)" --out-dir $(BUILD)
 
 rehydrate: venv
@@ -33,7 +50,7 @@ rehydrate: venv
 	$(PY) scripts/rdf_to_vault.py $(REHYDRATED) $(BUILD)/schema.ttl $(BUILD)/data.ttl --context "$(VAULT)/context.jsonld"
 
 rebuild: venv
-	$(PY) scripts/vault_to_rdf.py $(REHYDRATED) --out-dir $(REBUILD)
+	$(PY) scripts/vault_to_rdf.py $(REHYDRATED) --source --out-dir $(REBUILD)
 
 compare: venv
 	$(PY) scripts/compare_builds.py $(BUILD) $(REBUILD)
