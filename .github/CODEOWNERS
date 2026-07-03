@@ -1,0 +1,6 @@
+# Code owners for Vault-LD.
+# Every path requires a review from the developer team before a PR
+# touching it can merge into main (enforced by the branch protection
+# rule "Require review from Code Owners").
+
+*   @The-Knowledge-Graph-Guys/developer
