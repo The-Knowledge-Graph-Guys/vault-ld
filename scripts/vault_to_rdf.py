@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import yaml
 from urllib.parse import quote
@@ -48,6 +48,47 @@ HOST_KEYS = {"tags", "aliases", "cssclasses"}
 def iri_safe(name: str) -> str:
     """Percent-encode characters not legal in an IRI local part (SPEC §4.5)."""
     return quote(name, safe="")
+
+
+def disable_network() -> None:
+    """Refuse all outbound requests for the rest of the process.
+
+    RDF and context documents being processed are untrusted, and rdflib's
+    parsers will otherwise fetch remote documents they reference (JSON-LD
+    @context, owl:imports resolution, ...) — an SSRF lever. None of the
+    reference tools legitimately performs network I/O, so it is disabled
+    outright."""
+    import urllib.request
+
+    def _refuse(*_args, **_kwargs):
+        raise RuntimeError("network access is disabled: ingest never fetches remote documents")
+
+    urllib.request.urlopen = _refuse
+    urllib.request.OpenerDirector.open = _refuse
+
+
+# ---------------------------------------------------------------------------
+# Trust boundary: a vault may be cloned from anywhere and an RDF file may come
+# from a foreign ontology, so every path read from either is untrusted. Any
+# path assembled from vault/RDF content must stay inside the tree it belongs
+# to — these helpers are the single containment check both tools share.
+# ---------------------------------------------------------------------------
+
+def within_root(candidate: Path, root: Path) -> bool:
+    """True when `candidate` resolves to a location inside `root`."""
+    return candidate.resolve().is_relative_to(root.resolve())
+
+
+def safe_relative_ref(ref: str) -> bool:
+    """True when a path string from untrusted content is a plain relative
+    path that cannot climb out of its base directory: no absolute form (POSIX
+    or Windows), no backslashes, no '..' segments."""
+    if "\\" in ref or "\x00" in ref:
+        return False
+    p = PurePosixPath(ref)
+    if p.is_absolute() or PureWindowsPath(ref).is_absolute():
+        return False
+    return ".." not in p.parts
 
 # ---------------------------------------------------------------------------
 # Folder structure decides the layer (SPEC §3, §5.1): the schema layer lives
@@ -75,13 +116,39 @@ EXPECTED_SCHEME = {SKOS + "ConceptScheme"}
 EXPECTED_CONCEPT = {SKOS + "Concept"}
 
 
+# Context documents are untrusted content like everything else in a cloned
+# vault: cap their size (the cap must bind *before* the bytes are in memory)
+# and turn parse failures into warnings instead of tracebacks.
+MAX_CONTEXT_BYTES = 4 << 20  # 4 MiB
+
+
+def read_json_document(path: Path, warnings: list[str]) -> dict | None:
+    """Read a JSON document from untrusted content: size-capped, and any
+    failure (unreadable, oversized, malformed, not an object) is reported as
+    a warning and returns None rather than raising."""
+    try:
+        if path.stat().st_size > MAX_CONTEXT_BYTES:
+            warnings.append(f"{path}: document exceeds {MAX_CONTEXT_BYTES} bytes — refused")
+            return None
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError) as e:
+        warnings.append(f"{path}: unreadable JSON document "
+                        f"({e.__class__.__name__}) — skipped")
+        return None
+    if not isinstance(doc, dict):
+        warnings.append(f"{path}: JSON document is not an object — skipped")
+        return None
+    return doc
+
+
 def _def_form(d):
     """A term definition in its expanded dict form, so the compact string form
     compares equal to its equivalent object ("rdfs:label" == {"@id": "rdfs:label"})."""
     return d if isinstance(d, dict) else {"@id": d}
 
 
-def merge_context(node, base_dir: Path, seen: set[Path], warnings: list[str]) -> dict:
+def merge_context(node, base_dir: Path, seen: set[Path], warnings: list[str],
+                  root: Path | None = None) -> dict:
     """Resolve a JSON-LD `@context` value into one flat mapping.
 
     Follows JSON-LD composition semantics: a context may be an inline object, a
@@ -96,13 +163,19 @@ def merge_context(node, base_dir: Path, seen: set[Path], warnings: list[str]) ->
     ontologies it is almost always an accidental collision. An identical
     re-declaration (self-contained contexts re-declaring common prefixes) is
     benign and stays silent.
+
+    `root` is the containment boundary for string references: a reference that
+    resolves outside it is refused (a cloned vault is untrusted content, so a
+    context must not be able to read arbitrary files on the machine).
     """
+    if root is None:
+        root = base_dir
     merged: dict = {}
     if isinstance(node, dict):
         merged.update(node)
     elif isinstance(node, list):
         for entry in node:
-            sub = merge_context(entry, base_dir, seen, warnings)
+            sub = merge_context(entry, base_dir, seen, warnings, root)
             src = entry if isinstance(entry, str) else "an inline context"
             for key, val in sub.items():
                 if key.startswith("@") or key not in merged:
@@ -116,15 +189,23 @@ def merge_context(node, base_dir: Path, seen: set[Path], warnings: list[str]) ->
         if node.startswith("http://") or node.startswith("https://"):
             warnings.append(f"remote context not fetched: {node}")
             return merged
+        if not safe_relative_ref(node):
+            warnings.append(f"context reference refused (absolute or '..'): {node}")
+            return merged
         ref = (base_dir / node).resolve()
+        if not within_root(ref, root):
+            warnings.append(f"context reference escapes its document tree: {node} — refused")
+            return merged
         if ref in seen:
             return merged  # cycle guard
         if not ref.exists():
-            warnings.append(f"referenced context not found: {ref}")
+            warnings.append(f"referenced context not found: {node}")
             return merged
         seen.add(ref)
-        doc = json.loads(ref.read_text(encoding="utf-8"))
-        sub = merge_context(doc.get("@context"), ref.parent, seen, warnings)
+        doc = read_json_document(ref, warnings)
+        if doc is None:
+            return merged
+        sub = merge_context(doc.get("@context"), ref.parent, seen, warnings, root)
         # A referenced context contributes vocabulary, not a new document base:
         # its @base scopes only its own ontology's subjects (read separately by
         # context_base), so it must not override the root's @base here.
@@ -141,14 +222,21 @@ def context_base(path: Path, warnings: list[str]) -> str | None:
     """
     if not path.exists():
         return None
-    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc = read_json_document(path, warnings)
+    if doc is None:
+        return None
     mapping = merge_context(doc.get("@context"), path.parent, {path.resolve()}, warnings)
     return mapping.get("@base")
 
 
 def load_context(path: Path, warnings: list[str]) -> "Context":
-    """Load a context document, composing any contexts it references."""
-    doc = json.loads(path.read_text(encoding="utf-8"))
+    """Load a context document, composing any contexts it references. The
+    root context is load-bearing (it decides where subjects mint), so an
+    unusable one is a hard error, not a silent fallback."""
+    doc = read_json_document(path, warnings)
+    if doc is None:
+        print(f"error: {warnings[-1]}", file=sys.stderr)
+        raise SystemExit(1)
     mapping = merge_context(doc.get("@context"), path.parent, {path.resolve()}, warnings)
     return Context(mapping)
 
@@ -194,15 +282,51 @@ class Context:
         return self.base + token
 
 
+# Frontmatter is untrusted input (a vault may be cloned from anywhere), so it
+# is parsed with a loader that refuses YAML aliases — alias expansion is a
+# memory-amplification vector ("billion laughs") and frontmatter has no
+# legitimate use for it — and capped in size so one hostile note cannot stall
+# a whole-vault sweep.
+MAX_FRONTMATTER_BYTES = 1 << 20  # 1 MiB
+
+
+class FrontmatterLoader(yaml.SafeLoader):
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.YAMLError("YAML aliases are not allowed in frontmatter")
+        return super().compose_node(parent, index)
+
+
 def parse_frontmatter(path: Path) -> dict | None:
-    """Return the YAML frontmatter of a Markdown note as a dict, or None."""
-    text = path.read_text(encoding="utf-8")
+    """Return the YAML frontmatter of a Markdown note as a dict, or None.
+    Oversized or malformed frontmatter is skipped with a note on stderr rather
+    than aborting the sweep."""
+    # Read only a bounded prefix: the size cap must bind *before* the file is
+    # in memory, or one multi-gigabyte note defeats it. Frontmatter always
+    # sits at the top, so a prefix is all the parse needs.
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            text = fh.read(MAX_FRONTMATTER_BYTES + 4096)
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"warning: {path.name}: unreadable ({e.__class__.__name__}) "
+              f"— note skipped", file=sys.stderr)
+        return None
     if not text.startswith("---"):
         return None
     parts = text.split("---", 2)
-    if len(parts) < 3:
+    if len(parts) < 3 or len(parts[1].encode("utf-8", "ignore")) > MAX_FRONTMATTER_BYTES:
+        # no closing delimiter within the prefix counts as oversized too
+        if len(text.encode("utf-8", "ignore")) > MAX_FRONTMATTER_BYTES:
+            print(f"warning: {path.name}: frontmatter exceeds "
+                  f"{MAX_FRONTMATTER_BYTES} bytes — note skipped", file=sys.stderr)
         return None
-    data = yaml.safe_load(parts[1])
+    try:
+        data = yaml.load(parts[1], Loader=FrontmatterLoader)
+    except yaml.YAMLError as e:
+        reason = str(e).splitlines()[0] if str(e) else e.__class__.__name__
+        print(f"warning: {path.name}: unparseable frontmatter ({reason}) "
+              f"— note skipped", file=sys.stderr)
+        return None
     return data if isinstance(data, dict) else None
 
 
@@ -338,9 +462,16 @@ def main() -> int:
         warnings.append("root context declares no @base and no --data-ns given — "
                         "instances minted under https://example.org/data/")
 
-    # ---- Pass 1a: discover every note and its layer.
+    # ---- Pass 1a: discover every note and its layer. A note reached through
+    # a symlink is skipped: a hostile vault must not pull files from outside
+    # its own tree into the export.
+    vault_root = vault.resolve()
     discovered: list[tuple[Path, dict, str, set[str] | None]] = []
     for path in sorted(vault.rglob("*.md")):
+        if path.is_symlink() or not within_root(path, vault_root):
+            warnings.append(f"{path.relative_to(vault)} is a symlink or resolves "
+                            f"outside the vault — skipped")
+            continue
         fm = parse_frontmatter(path)
         if fm is not None:
             fm = canonical_keywords(fm, ctx)

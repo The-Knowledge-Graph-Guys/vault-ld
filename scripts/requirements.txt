@@ -1,2 +1,5 @@
-rdflib>=7.0
-PyYAML>=6.0
+# Pinned exactly: the ingest tool parses untrusted RDF, so the resolved
+# dependency versions are security-relevant (see SECURITY.md). Bump
+# deliberately, watching the rdflib/PyYAML advisories.
+rdflib==7.6.0
+PyYAML==6.0.3

@@ -18,12 +18,19 @@ from pathlib import Path
 from rdflib import Graph
 from rdflib.compare import graph_diff, isomorphic
 
+from vault_to_rdf import disable_network
+
 
 def main() -> int:
     if len(sys.argv) != 3:
         print(__doc__.strip(), file=sys.stderr)
         return 2
     left, right = Path(sys.argv[1]), Path(sys.argv[2])
+
+    # The .ttl files compared are usually this repo's own build outputs, but
+    # nothing stops a user pointing the tool at foreign RDF — same trust
+    # boundary as ingest, so the same rule: parsing must never reach the network.
+    disable_network()
 
     ok = True
     for name in ("schema.ttl", "data.ttl"):

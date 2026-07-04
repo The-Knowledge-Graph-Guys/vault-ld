@@ -4,6 +4,70 @@ All notable changes to the Vault-LD specification and its reference tools are
 documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions track the specification, with the tools evolving alongside it.
 
+## [Unreleased]
+
+### Security
+
+The reference tools now treat both a cloned vault and ingested RDF as untrusted
+input throughout (see the new **SECURITY.md** for the trust model). All findings
+from the branch security review are fixed and exploit-tested; the roundtrip is
+unchanged.
+
+- **Contained file writes** — a `vld:path` placement hint from ingested RDF can
+  no longer escape the vault. Absolute paths, `..` traversal, and hints that
+  resolve outside the vault root (including via symlinks) are refused, closing
+  an arbitrary-file-write path in `rdf_to_vault.py`.
+- **No network I/O on ingest** — `rdf_to_vault.py` disables outbound requests
+  before parsing, so hostile RDF can no longer make `rdflib` fetch remote
+  `@context`/imported documents (SSRF). A remote reference now fails with a
+  clear error instead.
+- **Contained context reads** — a `@context` string reference in a vault can no
+  longer read files outside the vault; absolute and `..` references are refused
+  (`vault_to_rdf.py`), matching the existing remote-refusal.
+- **Bounded frontmatter parsing** — YAML frontmatter is parsed with an
+  alias-refusing SafeLoader variant (blocks "billion laughs" alias-expansion
+  DoS) and capped at 1 MiB per note; malformed frontmatter skips the note
+  rather than aborting the whole sweep.
+- **Symlink-safe vault sweeps** — both tools skip `.md` files that are symlinks
+  or resolve outside the vault root.
+- **Pinned dependencies** — `scripts/requirements.txt` pins exact versions
+  (`rdflib==7.6.0`, `PyYAML==6.0.3`); the ingest tool's safety depends on the
+  resolved parser behaviour.
+- **Repository hygiene** — added **`.github/workflows/ci.yml`** that rejects
+  tracked bytecode/`venv` and runs the roundtrip as a regression guard; removed
+  stray local `__pycache__` artifacts.
+- **Security regression suite** — new **`scripts/test_security.py`**
+  (`make test`, stdlib `unittest` only) pins every SECURITY.md guarantee as an
+  executable test and runs in CI, so a pull request cannot silently weaken a
+  patch.
+- **No frontmatter injection** — coined YAML keys (and all generated scalars)
+  are quoted unless they provably re-parse to themselves, so a hostile
+  predicate IRI whose localname contains a newline or `: ` can no longer
+  inject frontmatter lines into generated notes (`rdf_to_vault.py`).
+- **Hardened file-stem sanitisation** — stems derived from IRI localnames now
+  also strip control characters and leading dots (`.`/`..`/hidden files), and
+  every note write is re-checked against the vault root as a final
+  containment guard (`rdf_to_vault.py`).
+- **Bounded context and note reads** — `context.jsonld` documents are capped
+  at 4 MiB and parse failures warn instead of crashing (a malformed *root*
+  context is a hard error and is never overwritten); the 1 MiB frontmatter
+  cap now binds *before* a note is read into memory, and undecodable notes
+  are skipped instead of aborting the sweep (`vault_to_rdf.py`,
+  `rdf_to_vault.py`).
+- **Network kill-switch everywhere** — `disable_network` moved to
+  `vault_to_rdf.py` and is now also applied by `compare_builds.py`, so no
+  reference tool can be made to fetch a remote document while parsing RDF.
+- **CI hardening** — the workflow token is read-only (`permissions:
+  contents: read`), checkout no longer persists credentials, and actions are
+  pinned to full commit SHAs (`actions/checkout` v4.3.1,
+  `actions/setup-python` v5.6.0) instead of mutable tags.
+- **`--unsafe-allow-network` ingest flag** — an explicit opt-out of the
+  network kill-switch for RDF whose remote references (public `@context`
+  documents, e.g. schema.org's) you have verified as trustworthy. It prints
+  a warning banner and pauses five seconds before proceeding so the run can
+  be cancelled with Ctrl-C; cancellation exits before anything is fetched or
+  written. The fail-closed default is unchanged.
+
 ## [0.2.0] — 2026-07-03
 
 ### Specification

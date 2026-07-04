@@ -6,6 +6,7 @@
 #   make compare     build/ vs rehydratedVaultBuild/ -> graph diff
 #
 #   make roundtrip   runs all four in order
+#   make test        security regression suite (scripts/test_security.py)
 #   make clean       removes venv-independent outputs
 #
 # The roundtrip targets export with --source (the placement triples that make
@@ -30,7 +31,7 @@ BUILD      := build
 REHYDRATED := rehydratedVault
 REBUILD    := rehydratedVaultBuild
 
-.PHONY: venv export query rehydrate rebuild compare roundtrip clean
+.PHONY: venv export query rehydrate rebuild compare roundtrip test clean
 
 $(PY): scripts/requirements.txt
 	$(SYSPY) -m venv $(VENV)
@@ -56,6 +57,11 @@ compare: venv
 	$(PY) scripts/compare_builds.py $(BUILD) $(REBUILD)
 
 roundtrip: export rehydrate rebuild compare
+
+# Every guarantee in SECURITY.md is pinned as a test: a PR that weakens a
+# security patch fails here before it fails a human review.
+test: venv
+	$(PY) -m unittest discover -s scripts -p "test_*.py" -v
 
 clean:
 	rm -rf $(BUILD) $(REHYDRATED) $(REBUILD)
