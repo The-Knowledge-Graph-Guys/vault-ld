@@ -1,0 +1,29 @@
+name: PR checks
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+# Read-only by design: this workflow runs against unmerged, untrusted PR
+# content and must never hold a writable token (SECURITY.md).
+permissions:
+  pull-requests: read
+
+# a new push or title edit supersedes any still-running check for the PR
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  conventional-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # PRs are squash-merged with the title as the commit message, and
+      # release-please derives the version bump and changelog entry from
+      # that message (CONTRIBUTING.md) — so the title must parse as a
+      # conventional commit. Pinned to a full commit SHA — a tag like @v6
+      # is mutable (supply chain).
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

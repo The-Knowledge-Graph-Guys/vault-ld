@@ -1,0 +1,42 @@
+name: Release
+
+# Releases are automated with release-please (Google's standard release
+# tooling). It watches main and maintains a running release PR: every
+# conventional-commit merge updates that PR's version bump (the highest
+# change in the batch wins: feat!/BREAKING > feat > fix) and its generated
+# ledger (.github/CHANGELOG.md). A maintainer merging the release PR is what
+# cuts the release — the version.txt + changelog commit, the vX.Y.Z tag, and
+# the GitHub release with the same notes, in one step. The hand-written
+# narrative lives in HISTORY.md (see AGENTS.md), never touched by this
+# workflow. Runs only on push to main — never on unmerged PR content
+# (SECURITY.md).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Pinned to a full commit SHA — a tag like @v5 is mutable (supply
+      # chain). Bump the SHA and the trailing version comment together.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
+          # PRs opened with the default workflow token never trigger other
+          # workflows (GitHub's anti-recursion rule), so required checks on
+          # the release PR won't start until it is closed and reopened. Set
+          # the RELEASE_PLEASE_TOKEN secret (fine-grained PAT or GitHub App
+          # token with contents + pull-requests write) to lift that; without
+          # it the default token still works.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}

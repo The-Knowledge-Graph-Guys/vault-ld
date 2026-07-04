@@ -9,9 +9,16 @@ on:
 permissions:
   contents: read
 
+# a new push to a PR supersedes its still-running check; pushes to main
+# always run to completion (each is a merge whose status matters)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # Actions are pinned to full commit SHAs: a tag like @v4 is mutable, so
       # a compromised action repo could swap the code it points at (supply
