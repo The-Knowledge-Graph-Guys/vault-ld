@@ -6,3 +6,6 @@ rehydratedVaultBuild
 
 
 venv
+node_modules
+docs/docs
+.docusaurus

@@ -1,0 +1,22 @@
+{
+  "name": "vault-ld-docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "assemble": "node assemble.mjs",
+    "start": "npm run assemble && docusaurus start",
+    "build": "npm run assemble && docusaurus build",
+    "serve": "docusaurus serve",
+    "snapshot": "npm run assemble && docusaurus docs:version"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.10.1",
+    "@docusaurus/preset-classic": "3.10.1",
+    "prism-react-renderer": "2.4.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
