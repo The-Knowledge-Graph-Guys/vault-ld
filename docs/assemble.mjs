@@ -19,6 +19,7 @@ const LINKS = {
   '.github/CHANGELOG.md': `${REPO}/.github/CHANGELOG.md`,
   'scripts/EXPORT.md': `${REPO}/scripts/EXPORT.md`,
   'scripts/INGEST.md': `${REPO}/scripts/INGEST.md`,
+  'Vault-LD%20Example': `${REPO.replace('/blob/', '/tree/')}/Vault-LD%20Example`,
 };
 
 function assemble(src, dest) {
@@ -26,6 +27,10 @@ function assemble(src, dest) {
   for (const [from, to] of Object.entries(LINKS)) {
     text = text.replaceAll(`](${from})`, `](${to})`).replaceAll(`](${from}#`, `](${to}#`);
   }
+  // Markdown images (![](images/…)) are bundled by Docusaurus, but raw-HTML
+  // <img>/<source> paths pass through untouched — point those at the copy of
+  // images/ served from the static dir (see cpSync below).
+  text = text.replaceAll(/(src|srcset)="images\//g, '$1="/vault-ld/images/');
   writeFileSync(join(docs, dest), text);
 }
 
@@ -37,3 +42,6 @@ for (const f of ['SPEC.md', 'SECURITY.md', 'CONTRIBUTING.md', 'HISTORY.md']) {
   assemble(f, f);
 }
 cpSync(join(root, 'images'), join(docs, 'images'), {recursive: true});
+// Second copy under static/ (gitignored) for the raw-HTML references above.
+rmSync(join(site, 'static', 'images'), {recursive: true, force: true});
+cpSync(join(root, 'images'), join(site, 'static', 'images'), {recursive: true});
