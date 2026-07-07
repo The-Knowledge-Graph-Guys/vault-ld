@@ -37,6 +37,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
@@ -62,11 +63,15 @@ from vault_to_rdf import (
     Context,
     canonical_keywords,
     context_base,
+    disable_network,
     governing,
     iri_safe,
     load_context,
     locate,
     parse_frontmatter,
+    read_json_document,
+    safe_relative_ref,
+    within_root,
 )
 
 XSD = "http://www.w3.org/2001/XMLSchema#"
@@ -135,8 +140,16 @@ def sanitize_stem(local: str) -> str:
     """Make a localname safe as a file stem, percent-decoding first (SPEC §4.5,
     §5.5): the forward direction minted `Red Lentil Soup.md` as
     `Red%20Lentil%20Soup`, so decoding restores the file name that mints back
-    to the identical IRI — no explicit @id pin needed."""
-    return re.sub(r'[\\/:*?"<>|]', "-", unquote(local)) or "unnamed"
+    to the identical IRI — no explicit @id pin needed.
+
+    The localname is untrusted (it comes from a foreign IRI) and the stem
+    becomes a path segment, so anything with path meaning is neutralised:
+    separators and control characters are replaced, and a leading-dot name
+    ('.', '..', '.hidden') is stripped of its dots — '..' is a path step, not
+    a name, and it must never survive into a joinpath."""
+    stem = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', "-", unquote(local))
+    stem = stem.lstrip(".").strip()
+    return stem or "unnamed"
 
 
 def derive_folder_name(ns: str) -> str:
@@ -162,7 +175,15 @@ class ContextEditor:
     def __init__(self, path: Path, initial: dict | None = None):
         self.path = path
         if path.exists():
-            self.doc = json.loads(path.read_text(encoding="utf-8"))
+            # fail closed on an unusable existing context: editing means
+            # writing it back, and a parse failure must not become an
+            # overwrite of a file the user can still inspect and repair
+            problems: list[str] = []
+            doc = read_json_document(path, problems)
+            if doc is None:
+                print(f"error: {problems[-1]} — refusing to edit it", file=sys.stderr)
+                raise SystemExit(1)
+            self.doc = doc
             self.dirty = False
         else:
             self.doc = {"@context": initial if initial is not None else {}}
@@ -251,7 +272,11 @@ def emit_scalar(v) -> str:
 def emit_frontmatter(fm: dict) -> str:
     lines = ["---"]
     for key, val in fm.items():
-        k = json.dumps(key) if key.startswith("@") else key
+        # a key is written bare only when it re-parses to exactly itself;
+        # everything else — @keywords, and coined term names carrying hostile
+        # characters from a foreign IRI (newlines, ': ') — is JSON-quoted so
+        # untrusted content can never inject frontmatter lines
+        k = key if plain_safe(key) else json.dumps(key)
         if isinstance(val, list):
             lines.append(f"{k}: [ " + ", ".join(emit_scalar(v) for v in val) + " ]")
         else:
@@ -336,7 +361,14 @@ def scan_existing_notes(vault: Path, ctx: Context, root_base: str,
     by_iri: dict[str, Path] = {}
     if not vault.exists():
         return by_iri
+    vault_root = vault.resolve()
     for path in sorted(vault.rglob("*.md")):
+        # a note reached through a symlink is not part of the vault: updating
+        # it in place would write outside the tree being ingested into
+        if path.is_symlink() or not within_root(path, vault_root):
+            warnings.append(f"{path.relative_to(vault)} is a symlink or resolves "
+                            f"outside the vault — skipped")
+            continue
         fm = canonical_keywords(parse_frontmatter(path) or {}, ctx)
         minted, base = minted_iri(path, vault, root_base, warnings)
         if "@id" in fm:
@@ -371,19 +403,49 @@ def main() -> int:
                          "the root context's @base only — a data folder's own "
                          "context.jsonld still governs its subtree (default: the root "
                          "context's @base; also the @base of a synthesized context)")
+    ap.add_argument("--unsafe-allow-network", action="store_true",
+                    help="UNSAFE: let rdflib fetch remote documents the RDF references "
+                         "(JSON-LD @context, ...) instead of refusing all network I/O. "
+                         "A fetched document shapes how every triple is interpreted, so "
+                         "use this only with sources whose remote references you have "
+                         "verified as trustworthy (see SECURITY.md)")
     args = ap.parse_args()
 
     vault: Path = args.vault
     data_ns: str = args.data_ns or "https://example.org/data/"
     warnings: list[str] = []
 
-    # ---- Load the graph(s).
+    # ---- Load the graph(s). No parser may reach the network (see
+    # disable_network) unless the user explicitly opted out of that guarantee.
+    if args.unsafe_allow_network:
+        print("WARNING: --unsafe-allow-network is set — remote documents referenced "
+              "by the RDF will be fetched and can influence how every triple is "
+              "interpreted. Only proceed if you have verified those references as "
+              "trustworthy (see SECURITY.md).", file=sys.stderr)
+        # a grace period before anything is fetched or written, so the banner
+        # can actually be read and the run cancelled
+        try:
+            for i in range(5, 0, -1):
+                print(f"  continuing in {i}s — press Ctrl-C to cancel", file=sys.stderr)
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("cancelled — nothing was fetched or ingested", file=sys.stderr)
+            return 130
+    else:
+        disable_network()
     g = Graph()
     for f in args.rdf:
         if not f.exists():
             print(f"error: RDF file not found: {f}", file=sys.stderr)
             return 1
-        g.parse(f)
+        try:
+            g.parse(f)
+        except RuntimeError as e:
+            if "network access is disabled" in str(e):
+                print(f"error: {f.name} references a remote document, which ingest "
+                      f"refuses to fetch (see SECURITY.md)", file=sys.stderr)
+                return 1
+            raise
 
     # ---- Resolve the context: given, found in the vault, or synthesized.
     root_target = vault / "context.jsonld"
@@ -393,13 +455,27 @@ def main() -> int:
         if context_path.resolve() != root_target.resolve() and not root_target.exists():
             # Ingesting into a fresh vault with an external context: copy the
             # root and the local context files it references into the vault.
-            doc = json.loads(context_path.read_text(encoding="utf-8"))
+            doc = read_json_document(context_path, warnings)
+            if doc is None:  # load_context above would already have exited
+                print(f"error: {warnings[-1]}", file=sys.stderr)
+                return 1
             entries = doc.get("@context")
             for ref in (entries if isinstance(entries, list) else []):
                 if isinstance(ref, str) and not ref.startswith(("http://", "https://")):
+                    # the reference names both the read and the write target,
+                    # and the context document is untrusted content: only a
+                    # plain relative path that stays inside both trees is copied
+                    if not safe_relative_ref(ref):
+                        warnings.append(f"context reference '{ref}' is not a plain "
+                                        f"relative path — not copied")
+                        continue
                     src = context_path.parent / ref
+                    dst = vault / ref
+                    if not (within_root(src, context_path.parent) and within_root(dst, vault)):
+                        warnings.append(f"context reference '{ref}' escapes its "
+                                        f"tree — not copied")
+                        continue
                     if src.exists():
-                        dst = vault / ref
                         dst.parent.mkdir(parents=True, exist_ok=True)
                         dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
             root_editor = ContextEditor(root_target, initial={})
@@ -454,9 +530,17 @@ def main() -> int:
     # most notes, since identity mints from the file name alone (§4.5).
     # Consumed for file placement, never rendered into frontmatter (§5.5.1) —
     # on the vault side the path IS the location.
+    # A hint is a *write target*, and the graph carrying it is untrusted: only
+    # plain relative paths are accepted (no absolute form, no '..', no
+    # backslashes), and each accepted hint is re-checked against the vault
+    # root before use, below.
     path_hint: dict[str, str] = {}
     for s, o in g.subject_objects(VLD_PATH):
         if isinstance(s, URIRef) and isinstance(o, Literal) and str(o).endswith(".md"):
+            if not safe_relative_ref(str(o)):
+                warnings.append(f"vld:path '{o}' for <{s}> is not a plain relative "
+                                f"path — hint refused")
+                continue
             path_hint[str(s)] = str(o)
 
     # ---- Namespace -> folder. Existing folders first, then the graph's
@@ -516,6 +600,8 @@ def main() -> int:
                 best_len, best = len(b), vault / kd / name
         return best
 
+    vault_root = vault.resolve()
+
     # ---- Assign each subject a path (existing note wins) and a stem.
     # Two subjects may share a note *name* (links to them go path-qualified,
     # SPEC §4.4.1) but never one *file*: a canonical path already claimed by a
@@ -574,12 +660,26 @@ def main() -> int:
         ns, local = split_iri(iri)
         stem = sanitize_stem(local) if local else derive_folder_name(ns)
 
+        # Belt-and-braces for the lexical check at harvest: a hint that still
+        # resolves outside the vault (a symlinked folder inside it could
+        # re-route the write) is refused and the subject falls back to
+        # default placement; the refused triple stays data, not placement.
+        hinted: Path | None = None
+        if iri in path_hint:
+            candidate = context_folder_for(iri) / path_hint[iri]
+            if within_root(candidate, vault_root):
+                hinted = candidate
+            else:
+                warnings.append(f"vld:path '{path_hint[iri]}' for <{iri}> resolves "
+                                f"outside the vault — hint refused")
+                del path_hint[iri]
+
         if iri in existing_by_iri:
             path = existing_by_iri[iri]
             folder = None
-        elif iri in path_hint:
+        elif hinted is not None:
             # a pinned note's true path, relative to its governing context
-            path = free_path(context_folder_for(iri) / path_hint[iri], iri)
+            path = free_path(hinted, iri)
             folder = None
         elif kind == "instance" and iri.startswith(root_base) and \
                 "/" not in iri[len(root_base):] and len(iri) > len(root_base):
@@ -766,6 +866,14 @@ def main() -> int:
     for s in subjects:
         iri = str(s)
         path, stem = note_path[iri], note_stem[iri]
+
+        # last line of containment defence: every component of `path` was
+        # sanitized or validated above, but nothing untrusted may be read
+        # from or written to a location outside the vault regardless
+        if not within_root(path, vault_root):
+            warnings.append(f"note path for <{iri}> resolves outside the vault "
+                            f"— subject skipped")
+            continue
 
         # read the existing note first: its body, extra keys and @id survive
         old_text = path.read_text(encoding="utf-8") if path.exists() else ""
