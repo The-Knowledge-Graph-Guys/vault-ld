@@ -36,6 +36,33 @@ Once there's rough consensus on the issue, submit a pull request.
    Vault to RDF back to vault must be a no-op, and RDF to vault back to RDF must be graph-isomorphic (SPEC §5).
 5. Open the pull request against `main`. The template will ask you to confirm the sync and roundtrip checks.
 
+## PR titles, versioning, and the changelog
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please).
+Pull requests are squash-merged and the PR title becomes the commit message,
+so every title must be a [conventional commit](https://www.conventionalcommits.org)
+— CI enforces the format:
+
+| Title type | Example | Version bump on release |
+|---|---|---|
+| `feat:` | `feat: add SHACL export` | minor — 0.`y`.0 |
+| `fix:` | `fix: percent-encode fragment anchors` | patch — 0.2.`z` |
+| `feat!:` / `fix!:` — or any type with a `BREAKING CHANGE:` footer in the PR description | `feat!: fold vld:path into dcterms` | major — `x`.0.0 |
+| `docs:`, `test:`, `ci:`, `chore:`, `refactor:`, `build:` | `docs: clarify §4.5 minting` | none |
+
+Never edit the files release-please owns (all under `.github/` —
+`version.txt`, `CHANGELOG.md`, `.release-please-manifest.json`) — it
+generates them from merged PR titles. It maintains a running release PR that accumulates every
+change merged since the last release; a maintainer merging that release PR is
+what cuts the release — the version bump (the highest change in the batch
+wins), the changelog entries, the `vX.Y.Z` tag, and the GitHub release, in
+one step.
+
+The machine ledger is deliberately terse. The narrative record — what a
+release means and why the work happened — is **HISTORY.md**: add your
+rationale under `## [Unreleased]` as part of your PR (see AGENTS.md if an
+agent is doing the writing).
+
 ## Conformance language
 
 The spec uses RFC 2119/8174 key words (**MUST**, **SHOULD**, **MAY**). Use them deliberately in normative text, and not at all in explanatory prose.
