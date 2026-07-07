@@ -14,11 +14,25 @@ ever written by hand.
 
 ## [Unreleased]
 
+### Process
+
+- **Pinned docs links resolve from day one** — the latest released snapshot
+  serves at the docs-site root, so its version-prefixed URLs
+  (`…/vault-ld/0.3.0/SPEC`) would 404 until the *next* release demotes it to
+  an archived path — yet release notes and HISTORY headings want to link the
+  pinned form immediately. The site's 404 page (which GitHub Pages serves for
+  any unknown path) now forwards a latest-version-prefixed path to the same
+  page at the root (`docs/src/theme/NotFound/Content/`); every other missing
+  path still gets a real 404. The alternative — giving every released version
+  an explicit path and redirecting the root to the newest — was rejected as
+  more moving parts: it takes the docs off the site root and adds a config
+  touch to every release.
+- **Self-updating README badges** — the docs badge reads the released version
+  live from `docs/versions.json` on `main`, so it tracks each snapshot with
+  no README edit per release; the release badge went live after v0.3.0.
 
 
-
-
-## [0.3.0] — 2026-07-07
+## [0.3.0](https://the-knowledge-graph-guys.github.io/vault-ld/0.3.0) — 2026-07-07
 
 ### Process
 

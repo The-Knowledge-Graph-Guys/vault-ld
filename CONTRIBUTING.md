@@ -68,10 +68,13 @@ agent is doing the writing).
 The open release PR's title names the version it will cut. Before merging it:
 
 1. Open a small `docs:`-titled PR that stamps HISTORY.md — retitle
-   `## [Unreleased]` to `## [X.Y.Z] — date` and add a fresh empty
-   `## [Unreleased]` above it — and snapshots the docs site:
+   `## [Unreleased]` to `## [X.Y.Z] — date` 
    `cd docs && npm run snapshot -- X.Y.Z` (commit the generated
    `versioned_docs/`, `versioned_sidebars/`, and `versions.json`).
+   
+   Add a fresh empty
+   `## [Unreleased]` above the new version.
+
 2. Merge the release PR. Tag, GitHub release, and changelog are automatic.
 
 The snapshot freezes that version's pages on the site: the latest release
