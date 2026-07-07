@@ -63,6 +63,21 @@ release means and why the work happened — is **HISTORY.md**: add your
 rationale under `## [Unreleased]` as part of your PR (see AGENTS.md if an
 agent is doing the writing).
 
+### Cutting a release (maintainers)
+
+The open release PR's title names the version it will cut. Before merging it:
+
+1. Open a small `docs:`-titled PR that stamps HISTORY.md — retitle
+   `## [Unreleased]` to `## [X.Y.Z] — date` and add a fresh empty
+   `## [Unreleased]` above it — and snapshots the docs site:
+   `cd docs && npm run snapshot -- X.Y.Z` (commit the generated
+   `versioned_docs/`, `versioned_sidebars/`, and `versions.json`).
+2. Merge the release PR. Tag, GitHub release, and changelog are automatic.
+
+The snapshot freezes that version's pages on the site: the latest release
+serves at the site root, older releases stay in the version dropdown, and
+`main`'s live state is browsable as "Next (unreleased)".
+
 ## Conformance language
 
 The spec uses RFC 2119/8174 key words (**MUST**, **SHOULD**, **MAY**). Use them deliberately in normative text, and not at all in explanatory prose.

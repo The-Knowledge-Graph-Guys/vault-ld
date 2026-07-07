@@ -1,0 +1,24 @@
+/**
+ * Site-wide theme overrides live here (Docusaurus Infima variables).
+ * Kept minimal for now — custom theming is expected to grow.
+ */
+
+:root {
+  --ifm-color-primary: #2e6e4e;
+  --ifm-color-primary-dark: #296346;
+  --ifm-color-primary-darker: #275d42;
+  --ifm-color-primary-darkest: #204d37;
+  --ifm-color-primary-light: #337956;
+  --ifm-color-primary-lighter: #357f5a;
+  --ifm-color-primary-lightest: #3c8f65;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #4fb383;
+  --ifm-color-primary-dark: #43a476;
+  --ifm-color-primary-darker: #3f9b6f;
+  --ifm-color-primary-darkest: #34805c;
+  --ifm-color-primary-light: #61bc90;
+  --ifm-color-primary-lighter: #6ac096;
+  --ifm-color-primary-lightest: #85cca9;
+}

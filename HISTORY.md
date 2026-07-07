@@ -27,6 +27,20 @@ ever written by hand.
   the machine ledger in `.github/CHANGELOG.md` and on each GitHub release,
   the human/agent narrative here in HISTORY.md, and AGENTS.md instructing
   agents to record their rationale so the repo's reasoning stays queryable.
+- **Versioned documentation site** — the spec is now published as a static
+  site (`docs/`, Docusaurus, deployed to GitHub Pages on every push to
+  `main`). Docusaurus was chosen over MkDocs/Jekyll because the site is
+  meant to grow beyond rendered markdown — media, custom theming, React
+  components — and it is the established standard for that shape of OSS
+  docs. The pages are assembled from the repo's root markdown at build time
+  (`docs/assemble.mjs`) so there is no second copy to drift, and every page
+  embeds schema.org JSON-LD — a linked-data spec should itself be
+  discoverable as linked data. Released versions are frozen snapshots cut
+  at release time (`npm run snapshot -- X.Y.Z`, part of the release ritual
+  in CONTRIBUTING.md): the site root always serves the latest release,
+  older releases stay in the version dropdown, and `main`'s live state is
+  browsable as "Next (unreleased)" — so a reader can never mistake
+  unreleased spec text for a published version.
 
 ### Security
 

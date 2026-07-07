@@ -1,6 +1,26 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/logo-dark.svg">
+  <img src="images/logo-light.svg" alt="Vault-LD logo" width="140">
+</picture>
+
 # Vault-LD
 
-*An open format for knowledge two very different readers can share at once: a person editing notes, and a machine reasoning over a graph.*
+**An open format for knowledge two very different readers can share at once:<br>a person editing notes, and a machine reasoning over a graph.**
+
+[![CI](https://img.shields.io/github/actions/workflow/status/The-Knowledge-Graph-Guys/vault-ld/ci.yml?branch=main&label=CI&logo=github)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/The-Knowledge-Graph-Guys/vault-ld?color=blue)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/The-Knowledge-Graph-Guys/vault-ld?style=flat&logo=github&color=gold)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/stargazers)
+[![Issues](https://img.shields.io/github/issues/The-Knowledge-Graph-Guys/vault-ld)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/issues)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)](CONTRIBUTING.md)
+<!-- After the first release-please release, add:
+[![Release](https://img.shields.io/github/v/release/The-Knowledge-Graph-Guys/vault-ld)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/releases/latest)
+-->
+
+[**Specification**](SPEC.md) · [**Docs site**](https://the-knowledge-graph-guys.github.io/vault-ld/) · [**Example vault**](Vault-LD%20Example) · [**Contributing**](CONTRIBUTING.md)
+
+</div>
 
 ## RDF in the Vault
 
@@ -78,3 +98,11 @@ Vault-LD is an open standard and contributions are welcome: see [CONTRIBUTING.md
 ## License
 
 [Apache License 2.0](LICENSE).
+
+---
+
+<div align="center">
+
+If Vault-LD is useful to you, a ⭐ on [GitHub](https://github.com/The-Knowledge-Graph-Guys/vault-ld) helps others find it.
+
+</div>
