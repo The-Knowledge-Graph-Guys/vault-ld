@@ -10,15 +10,14 @@
 **An open format for knowledge two very different readers can share at once:<br>a person editing notes, and a machine reasoning over a graph.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/The-Knowledge-Graph-Guys/vault-ld/ci.yml?branch=main&label=CI&logo=github)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/The-Knowledge-Graph-Guys/vault-ld?logo=github)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/releases/latest)
+[![Docs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FThe-Knowledge-Graph-Guys%2Fvault-ld%2Fmain%2Fdocs%2Fversions.json&query=%24%5B0%5D&prefix=v&label=docs&color=3ECC5F&logo=docusaurus&logoColor=white)](https://vault-ld.org/)
 [![License](https://img.shields.io/github/license/The-Knowledge-Graph-Guys/vault-ld?color=blue)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/The-Knowledge-Graph-Guys/vault-ld?style=flat&logo=github&color=gold)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/stargazers)
 [![Issues](https://img.shields.io/github/issues/The-Knowledge-Graph-Guys/vault-ld)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/issues)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)](CONTRIBUTING.md)
-<!-- After the first release-please release, add:
-[![Release](https://img.shields.io/github/v/release/The-Knowledge-Graph-Guys/vault-ld)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/releases/latest)
--->
 
-[**Specification**](SPEC.md) · [**Docs site**](https://the-knowledge-graph-guys.github.io/vault-ld/) · [**Example vault**](Vault-LD%20Example) · [**Contributing**](CONTRIBUTING.md)
+[**Specification**](SPEC.md) · [**Docs site**](https://vault-ld.org/) · [**Example vault**](Vault-LD%20Example) · [**Contributing**](CONTRIBUTING.md)
 
 </div>
 

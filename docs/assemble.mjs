@@ -30,7 +30,7 @@ function assemble(src, dest) {
   // Markdown images (![](images/…)) are bundled by Docusaurus, but raw-HTML
   // <img>/<source> paths pass through untouched — point those at the copy of
   // images/ served from the static dir (see cpSync below).
-  text = text.replaceAll(/(src|srcset)="images\//g, '$1="/vault-ld/images/');
+  text = text.replaceAll(/(src|srcset)="images\//g, '$1="/images/');
   writeFileSync(join(docs, dest), text);
 }
 
