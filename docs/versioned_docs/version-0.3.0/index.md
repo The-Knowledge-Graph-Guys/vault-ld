@@ -18,7 +18,7 @@
 [![Release](https://img.shields.io/github/v/release/The-Knowledge-Graph-Guys/vault-ld)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/releases/latest)
 -->
 
-[**Specification**](SPEC.md) · [**Docs site**](https://the-knowledge-graph-guys.github.io/vault-ld/) · [**Example vault**](https://github.com/The-Knowledge-Graph-Guys/vault-ld/tree/main/Vault-LD%20Example) · [**Contributing**](CONTRIBUTING.md)
+[**Specification**](SPEC.md) · [**Docs site**](https://vault-ld.org/) · [**Example vault**](https://github.com/The-Knowledge-Graph-Guys/vault-ld/tree/main/Vault-LD%20Example) · [**Contributing**](CONTRIBUTING.md)
 
 </div>
 

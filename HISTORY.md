@@ -32,7 +32,7 @@ ever written by hand.
   no README edit per release; the release badge went live after v0.3.0.
 
 
-## [0.3.0](https://the-knowledge-graph-guys.github.io/vault-ld/0.3.0) — 2026-07-07
+## [0.3.0](https://vault-ld.org/0.3.0) — 2026-07-07
 
 ### Process
 
