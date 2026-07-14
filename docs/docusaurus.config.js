@@ -11,7 +11,7 @@ const jsonLd = [
     name: 'Vault-LD Specification',
     headline:
       'Vault-LD: an open format for reading a vault of Markdown notes as an RDF graph',
-    url: 'https://the-knowledge-graph-guys.github.io/vault-ld/',
+    url: 'https://vault-ld.org/',
     license: 'https://www.apache.org/licenses/LICENSE-2.0',
     author: {
       '@type': 'Organization',
@@ -41,8 +41,8 @@ const config = {
     'An open format for knowledge two very different readers can share at once: a person editing notes, and a machine reasoning over a graph.',
   favicon: 'img/favicon.svg',
 
-  url: 'https://the-knowledge-graph-guys.github.io',
-  baseUrl: '/vault-ld/',
+  url: 'https://vault-ld.org',
+  baseUrl: '/',
   organizationName: 'The-Knowledge-Graph-Guys',
   projectName: 'vault-ld',
 
