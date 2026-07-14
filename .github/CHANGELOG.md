@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/The-Knowledge-Graph-Guys/vault-ld/compare/v0.3.0...v0.4.0) (2026-07-14)
+
+
+### Features
+
+* migrated to vault-ld.org from standard github pages ([c53c071](https://github.com/The-Knowledge-Graph-Guys/vault-ld/commit/c53c0711edcb8d2b1f420e95be7fdeba40c43b3c))
+* updating to custom domain (vault-ld.org) ([9bed7f6](https://github.com/The-Knowledge-Graph-Guys/vault-ld/commit/9bed7f6371f247671b9f43870fedb49fdd6e193d))
+
+
+### Bug Fixes
+
+* broken logo ([1c2eab2](https://github.com/The-Knowledge-Graph-Guys/vault-ld/commit/1c2eab2ac8bb62caf9a803c7916046092a893232))
+
 ## [0.3.0](https://github.com/The-Knowledge-Graph-Guys/vault-ld/compare/v0.2.0...v0.3.0) (2026-07-07)
 
 
