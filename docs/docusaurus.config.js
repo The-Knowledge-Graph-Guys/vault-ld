@@ -96,6 +96,7 @@ const config = {
           versions: {
             current: {label: 'Next (unreleased)', noIndex: true},
             '0.3.0': {noIndex: true},
+            '0.4.0': {noIndex: true},
           },
         },
         blog: false,
