@@ -22,8 +22,47 @@ const LINKS = {
   'Vault-LD%20Example': `${REPO.replace('/blob/', '/tree/')}/Vault-LD%20Example`,
 };
 
+// SEO frontmatter injected per page (keyed by dest). Docusaurus can't derive
+// titles/descriptions itself here — the README's h1 sits inside a raw-HTML
+// <div>, so without this the homepage <title> falls back to the doc id
+// ("index"). index.md hides the synthesized title because the markdown
+// renders its own header block.
+const META = {
+  'index.md': {
+    title: 'Vault-LD — Markdown notes as an RDF knowledge graph',
+    hide_title: true,
+    description:
+      'Vault-LD is an open format for reading a vault of Markdown notes as an RDF knowledge graph: YAML-LD frontmatter becomes triples, wiki-links become typed edges, and the note body stays prose for humans and LLMs.',
+    keywords: ['vault-ld', 'rdf', 'markdown', 'knowledge graph', 'linked data', 'json-ld', 'obsidian', 'sparql', 'yaml-ld'],
+  },
+  'SPEC.md': {
+    description:
+      'The normative Vault-LD specification: how Markdown notes with YAML-LD frontmatter project deterministically to an RDF graph — identity, wiki-links, contexts, and round-tripping.',
+  },
+  'SECURITY.md': {
+    description:
+      'Vault-LD security policy: how to privately report suspected vulnerabilities in the specification or the reference tools.',
+  },
+  'CONTRIBUTING.md': {
+    description:
+      'How to contribute to the Vault-LD open standard: proposing specification changes, improving the reference tools, and how releases are cut.',
+  },
+  'HISTORY.md': {
+    description:
+      'The narrative history of Vault-LD, release by release — what changed, why it changed, and what it means for implementers.',
+  },
+};
+
 function assemble(src, dest) {
   let text = readFileSync(join(root, src), 'utf8');
+  const meta = META[dest];
+  if (meta) {
+    // JSON scalars/arrays are valid YAML, so stringify each value.
+    const yaml = Object.entries(meta)
+      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+      .join('\n');
+    text = `---\n${yaml}\n---\n\n${text}`;
+  }
   for (const [from, to] of Object.entries(LINKS)) {
     text = text.replaceAll(`](${from})`, `](${to})`).replaceAll(`](${from}#`, `](${to}#`);
   }

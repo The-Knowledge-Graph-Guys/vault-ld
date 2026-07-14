@@ -5,6 +5,15 @@ import {themes as prismThemes} from 'prism-react-renderer';
 // should be discoverable as linked data (and it signals the project's
 // nature to search engines).
 const jsonLd = [
+  // WebSite record: tells search engines the site's canonical name and the
+  // spellings people search by ("vault ld" without the hyphen).
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'Vault-LD',
+    alternateName: ['Vault LD', 'VaultLD', 'vault-ld', 'vld', 'vault ld'],
+    url: 'https://vault-ld.org/',
+  },
   {
     '@context': 'https://schema.org',
     '@type': 'TechArticle',
@@ -79,8 +88,14 @@ const config = {
           // cut with `npm run snapshot -- X.Y.Z` as part of the release
           // ritual (CONTRIBUTING.md). The latest snapshot serves at the
           // site root; main's live state is browsable as the version below.
+          // noIndex keeps near-identical copies of the docs (unreleased
+          // main, superseded releases) out of search engines so ranking
+          // signal concentrates on the latest release at the site root.
+          // When cutting a new snapshot, add the now-superseded version
+          // here.
           versions: {
-            current: {label: 'Next (unreleased)'},
+            current: {label: 'Next (unreleased)', noIndex: true},
+            '0.3.0': {noIndex: true},
           },
         },
         blog: false,
@@ -95,6 +110,9 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      // Social card for link previews (og:image / twitter:image).
+      image: 'img/social-card.png',
+      metadata: [{property: 'og:site_name', content: 'Vault-LD'}],
       colorMode: {
         respectPrefersColorScheme: true,
       },

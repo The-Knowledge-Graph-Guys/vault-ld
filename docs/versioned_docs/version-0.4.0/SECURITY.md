@@ -1,3 +1,7 @@
+---
+description: "Vault-LD security policy: how to privately report suspected vulnerabilities in the specification or the reference tools."
+---
+
 # Security Policy
 
 ## Reporting a vulnerability

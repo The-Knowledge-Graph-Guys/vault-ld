@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vault-ld.org/sitemap.xml

@@ -1,3 +1,10 @@
+---
+title: "Vault-LD — Markdown notes as an RDF knowledge graph"
+hide_title: true
+description: "Vault-LD is an open format for reading a vault of Markdown notes as an RDF knowledge graph: YAML-LD frontmatter becomes triples, wiki-links become typed edges, and the note body stays prose for humans and LLMs."
+keywords: ["vault-ld","rdf","markdown","knowledge graph","linked data","json-ld","obsidian","sparql","yaml-ld"]
+---
+
 <div align="center">
 
 <picture>

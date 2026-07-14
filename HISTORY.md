@@ -14,6 +14,25 @@ ever written by hand.
 
 ## [Unreleased]
 
+### Process
+
+- **The docs site is now search-discoverable** — moving to vault-ld.org reset
+  the site's search presence, and an audit found it actively hurting itself:
+  the same documents served at three URL sets (the release at the root,
+  `/next`, superseded versions), splitting ranking signal three ways, and the
+  homepage `<title>` fell back to the doc id ("index") because Docusaurus
+  cannot extract a title from the README's raw-HTML header. Superseded and
+  unreleased versions are now `noindex` (cutting a release adds the version
+  it demotes to the list in `docusaurus.config.js`), so search engines see
+  only the released docs at the site root, and `robots.txt` points at the
+  sitemap. Page titles and meta descriptions are injected at assembly time
+  (`assemble.mjs`) rather than written into the root markdown — frontmatter
+  would render as a metadata table atop the README on GitHub — the same
+  source-stays-clean principle as the existing image-path rewriting. A
+  schema.org `WebSite` record with `alternateName` spellings ("Vault LD",
+  "vld") joins the existing JSON-LD so unhyphenated queries connect to the
+  brand, and a social card (`og:image`) gives shared links a preview image.
+
 ## [0.4.0](https://vault-ld.org/0.4.0) — 2026-07-14
 
 ### Process
