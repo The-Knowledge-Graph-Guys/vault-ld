@@ -1,3 +1,7 @@
+---
+description: "How to contribute to the Vault-LD open standard: proposing specification changes, improving the reference tools, and how releases are cut."
+---
+
 # Contributing to Vault-LD
 
 Vault-LD is an open standard, published so the community can evolve it. Contributions of every size are welcome, from typo fixes to new normative sections.

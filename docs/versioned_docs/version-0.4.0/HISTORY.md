@@ -1,3 +1,7 @@
+---
+description: "The narrative history of Vault-LD, release by release — what changed, why it changed, and what it means for implementers."
+---
+
 # History
 
 The narrative record of Vault-LD, release by release — what changed, *why* it

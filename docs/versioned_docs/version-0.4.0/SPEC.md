@@ -1,3 +1,7 @@
+---
+description: "The normative Vault-LD specification: how Markdown notes with YAML-LD frontmatter project deterministically to an RDF graph — identity, wiki-links, contexts, and round-tripping."
+---
+
 # Vault-LD Specification - Linked Data in the Vault
 
 *An open format for knowledge two very different readers can share at once: a person editing notes, and a machine reasoning over a graph.*

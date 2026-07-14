@@ -7,7 +7,7 @@
 
 # Vault-LD
 
-**An open format for knowledge two very different readers can share at once:<br>a person editing notes, and a machine reasoning over a graph.**
+**An open format for knowledge that two very different readers can share at once:<br>a person editing notes, and a machine reasoning over a graph.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/The-Knowledge-Graph-Guys/vault-ld/ci.yml?branch=main&label=CI&logo=github)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/The-Knowledge-Graph-Guys/vault-ld?logo=github)](https://github.com/The-Knowledge-Graph-Guys/vault-ld/releases/latest)
