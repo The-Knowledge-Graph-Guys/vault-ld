@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="/vault-ld/images/logo-dark.svg">
-  <img src="/vault-ld/images/logo-light.svg" alt="Vault-LD logo" width="140">
+  <source media="(prefers-color-scheme: dark)" srcset="/images/logo-dark.svg">
+  <img src="/images/logo-light.svg" alt="Vault-LD logo" width="140">
 </picture>
 
 # Vault-LD
