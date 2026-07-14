@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/The-Knowledge-Graph-Guys/vault-ld/compare/v0.4.0...v0.5.0) (2026-07-14)
+
+
+### Features
+
+* SEO and social metadata for the docs site ([c19f257](https://github.com/The-Knowledge-Graph-Guys/vault-ld/commit/c19f2574c1a86eb7959bf7c0ae13deed3be496c5))
+
 ## [0.4.0](https://github.com/The-Knowledge-Graph-Guys/vault-ld/compare/v0.3.0...v0.4.0) (2026-07-14)
 
 
