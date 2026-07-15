@@ -52,6 +52,11 @@ const config = {
 
   url: 'https://vault-ld.org',
   baseUrl: '/',
+  // GitHub Pages serves each page as <route>/index.html and 301s the
+  // slashless URL, so canonicals and the sitemap must use the slashed
+  // form too — otherwise every page's canonical points at a redirect
+  // and Google reports "Redirect error" instead of indexing it.
+  trailingSlash: true,
   organizationName: 'The-Knowledge-Graph-Guys',
   projectName: 'vault-ld',
 
