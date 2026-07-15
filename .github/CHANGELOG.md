@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/The-Knowledge-Graph-Guys/vault-ld/compare/v0.5.0...v0.5.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* doc site redirects ([025e71b](https://github.com/The-Knowledge-Graph-Guys/vault-ld/commit/025e71be8d810e387dc451c920e05472d1c47170))
+* doc site redirects- sitemap now links to canonical links with the trailing slash. ([9515039](https://github.com/The-Knowledge-Graph-Guys/vault-ld/commit/9515039cf6de1bc8cc6e1c324ef7be9d69ff7109))
+
 ## [0.5.0](https://github.com/The-Knowledge-Graph-Guys/vault-ld/compare/v0.4.0...v0.5.0) (2026-07-14)
 
 
