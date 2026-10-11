@@ -105,6 +105,19 @@ its declared hierarchy implies, the true path simply travels as
 If a schema folder's context declares no `@base`, the tool falls back to
 `--schema-ns` + the ontology name.
 
+**Section references take their value from the body** (SPEC §4.4.2). On a
+term that is not IRI-coerced, a frontmatter value of `"[[#Heading]]"`,
+`"[[#Heading#Sub]]"` or `"[[#^block-id]]"` is replaced by the content of that
+section of the same note: the code itself when the section is exactly one
+fenced code block (fence lines and info string dropped), the section's
+Markdown verbatim otherwise. Nothing else in the body is read into the graph,
+and a note's body is only read at all when it holds such a reference (capped
+at 8 MiB; see SECURITY.md). On an IRI-coerced term the same link is an edge
+to the note itself. A reference that addresses nothing is skipped with a
+warning, never exported as the link text; a fragment link that names a note
+(`"[[Other#Heading]]"`) is not a section reference and is exported as a plain
+string with a warning, as before.
+
 ## How the context is resolved
 
 The tool follows JSON-LD context composition (SPEC §4.2). The root

@@ -40,6 +40,7 @@ import sys
 import time
 from collections import Counter
 from datetime import date, datetime
+from itertools import dropwhile
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -65,12 +66,17 @@ from vault_to_rdf import (
     context_base,
     disable_network,
     governing,
+    heading_span,
     iri_safe,
     load_context,
     locate,
     parse_frontmatter,
     read_json_document,
     safe_relative_ref,
+    section_fragment,
+    section_text,
+    section_value,
+    single_fence,
     within_root,
 )
 
@@ -300,6 +306,67 @@ def norm(v):
     if isinstance(v, (date, datetime)):
         return v.isoformat()
     return v
+
+
+# ---------------------------------------------------------------------------
+# Section references (SPEC §4.4.2, §5.5): a multi-line literal is written as a
+# fully formatted section of the body, and the frontmatter points at it.
+# ---------------------------------------------------------------------------
+
+# Heading text is built from the term name, which may be coined from a hostile
+# foreign IRI: only a plain name may become a heading, so untrusted content can
+# never inject lines into a body. Anything else stays a quoted scalar.
+SECTION_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 _-]{0,63}$")
+
+
+def fenced(value: str, info: str = "") -> list[str]:
+    """`value` as a fenced code block whose fence is longer than any backtick
+    run inside it, so the block always yields `value` back verbatim."""
+    run = max((len(r) for r in re.findall(r"`+", value)), default=0)
+    fence = "`" * max(3, run + 1)
+    return [fence + info, *value.split("\n"), fence]
+
+
+def section_lines(value: str, old: list[str]) -> list[str]:
+    """The lines to write for a section holding `value`, keeping the form the
+    author chose: an existing code block stays a code block (info string kept),
+    existing prose stays prose when it reads back identically."""
+    while old and not old[0].strip():
+        old = old[1:]
+    while old and not old[-1].strip():
+        old = old[:-1]
+    if old and single_fence(old) is not None:
+        info = old[0].strip().lstrip("`~")
+        return fenced(value, info)
+    prose = value.split("\n")
+    if old and section_text(prose) == value:
+        return prose
+    return fenced(value)
+
+
+def place_section(body: str, key: str, value: str,
+                  fragment: str | None) -> tuple[str, str]:
+    """Write `value` into the body as the section a `key: "[[#...]]"`
+    reference addresses; returns (new body, fragment). An existing heading
+    section is rewritten in place — only when its value changed, and touching
+    nothing else in the body. Otherwise a new `## key` section is appended."""
+    lines = body.split("\n")
+    if fragment and section_value(body, fragment) == value:
+        return body, fragment
+    if fragment and not fragment.startswith("^"):
+        span = heading_span(lines, [p.strip() for p in fragment.split("#")])
+        if span is not None:
+            h, end = span
+            old = lines[h + 1:end]
+            lead = len(old) - len(list(dropwhile(lambda l: not l.strip(), old)))
+            trail = len(old) - len(list(dropwhile(lambda l: not l.strip(), old[::-1])))
+            content = old[:lead] + section_lines(value, old) + old[len(old) - trail:]
+            return "\n".join(lines[:h + 1] + content + lines[end:]), fragment
+    heading, i = key, 2
+    while heading_span(lines, [heading]) is not None:
+        heading, i = f"{key} {i}", i + 1
+    block = "\n".join(fenced(value))
+    return body.rstrip("\n") + f"\n\n## {heading}\n\n{block}\n", heading
 
 
 # ---------------------------------------------------------------------------
@@ -929,11 +996,29 @@ def main() -> int:
         for k, v in new_fm.items():
             final.setdefault(k, v)
 
-        if path.exists() and final == old_fm:
+        # multi-line literals live in the body as section references (§4.4.2)
+        # — and a value the author already holds in a section stays there.
+        new_body = body
+        for name, tdef, val in rendered:
+            old_frag = section_fragment(old_fm.get(name))
+            if tdef.get("@type") == "@id":
+                # [[#...]] on an object property is an edge to the note itself
+                if old_frag is not None and val == link_for(iri):
+                    final[name] = old_fm[name]
+                continue
+            if not isinstance(val, str) or isinstance(val, Raw):
+                continue
+            held = old_frag is not None and section_value(new_body, old_frag) == val
+            if not held and ("\n" not in val or not SECTION_KEY_RE.match(name)):
+                continue
+            new_body, frag = place_section(new_body, name, val, old_frag)
+            final[name] = old_fm[name] if old_frag == frag else f"[[#{frag}]]"
+
+        if path.exists() and final == old_fm and new_body == body:
             unchanged += 1
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(emit_frontmatter(spelled(final)) + body, encoding="utf-8")
+        path.write_text(emit_frontmatter(spelled(final)) + new_body, encoding="utf-8")
         created, updated = created + (not old_text), updated + bool(old_text)
 
     # ---- Any prefix used in a note must resolve through the context.

@@ -38,7 +38,9 @@ therefore guarantee:
   that additionally refuses aliases (no "billion laughs" expansion) and is
   capped at 1 MiB per note — the cap binds *before* the file is read into
   memory, so an oversized note cannot exhaust it either. `context.jsonld`
-  documents are capped at 4 MiB, and malformed frontmatter, undecodable
+  documents are capped at 4 MiB. A note's body is read only when its
+  frontmatter holds a section reference (SPEC §4.4.2), and then only up to
+  8 MiB, checked before the read. Malformed frontmatter, undecodable
   notes, or unparseable context JSON skip the input instead of aborting the
   sweep (an unusable *root* context is a hard error — it decides where
   subjects mint — and is never overwritten).
@@ -49,6 +51,12 @@ therefore guarantee:
   path separators, control characters, and leading dots (`..` is a path
   step, not a name), and every note write is re-checked against the vault
   root before it happens.
+- **No body injection.** A value the ingester writes into a body section
+  (SPEC §4.4.2) sits inside a code fence longer than any backtick run in the
+  value, so it cannot close the fence early or smuggle in a heading. The
+  section's heading comes from the term name only when that name is plain
+  (letters, digits, spaces, `_`, `-`); a term coined from a hostile IRI
+  localname keeps its value as a quoted frontmatter scalar instead.
 - **No code execution surface.** The tools never invoke `eval`, `exec`,
   `pickle`, or a shell on vault or RDF content.
 

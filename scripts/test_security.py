@@ -13,6 +13,9 @@ Covered guarantees:
   - bounded parsing (frontmatter size cap that binds before the file is in
     memory, YAML alias refusal, context document size cap),
   - no frontmatter injection through coined term names,
+  - section references (SPEC §4.4.2): the note-body read is size-capped, and
+    a value written into a body section can neither escape its code fence
+    nor turn a hostile term name into a heading,
   - refusals fail closed with a warning, never a traceback.
 
 Uses only the standard library (unittest): the security suite must not widen
@@ -44,6 +47,8 @@ from rdf_to_vault import emit_frontmatter, sanitize_stem  # noqa: E402
 from vault_to_rdf import (  # noqa: E402
     MAX_CONTEXT_BYTES,
     MAX_FRONTMATTER_BYTES,
+    MAX_NOTE_BYTES,
+    _structure,
     parse_frontmatter,
     read_json_document,
     safe_relative_ref,
@@ -407,6 +412,69 @@ class TestExportContainment(TmpDirTest):
         }), encoding="utf-8")
         r = self.export(vault)
         self.assertIn("remote context not fetched", r.stderr)
+
+
+
+# ---------------------------------------------------------------------------
+# Section references (SPEC §4.4.2): the body becomes an input, so it gets the
+# same bounds and the same injection guarantees as the frontmatter
+# ---------------------------------------------------------------------------
+
+SECTION_CONTEXT = {"@context": {
+    "@base": "https://example.org/data/", "type": "@type",
+    "ex": "https://example.org/schema/", "notes": {"@id": "ex:notes"}}}
+
+
+class TestSectionReferences(TmpDirTest):
+    def vault_with(self, note: str) -> Path:
+        vault = self.tmp / "vault"
+        vault.mkdir()
+        (vault / "context.jsonld").write_text(json.dumps(SECTION_CONTEXT), encoding="utf-8")
+        (vault / "n.md").write_text(note, encoding="utf-8")
+        return vault
+
+    def test_oversized_body_not_read(self):
+        pad = "x" * (MAX_NOTE_BYTES + 1024)
+        vault = self.vault_with(f'---\ntype: ex:Thing\nnotes: "[[#Notes]]"\n---\n'
+                                f'## Notes\nsecret\n\n{pad}\n')
+        r = run_tool("vault_to_rdf.py", vault, "--out-dir", self.tmp / "out", cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("exceeds", r.stderr)
+        self.assertNotIn("secret", (self.tmp / "out" / "data.ttl").read_text(encoding="utf-8"))
+
+    def test_hostile_value_cannot_escape_its_fence(self):
+        # a literal built to close the fence early and smuggle in a heading
+        hostile = "a\n````\n## injected\n~~~\n`````\nb"
+        rdf = self.tmp / "g.ttl"
+        rdf.write_text('<https://example.org/data/n> a <https://example.org/schema/Thing> ;\n'
+                       f'  <https://example.org/schema/notes> {json.dumps(hostile)} .\n',
+                       encoding="utf-8")
+        vault = self.tmp / "vault"
+        vault.mkdir()
+        (vault / "context.jsonld").write_text(json.dumps(SECTION_CONTEXT), encoding="utf-8")
+        r = run_tool("rdf_to_vault.py", vault, rdf, cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        note = (vault / "n.md").read_text(encoding="utf-8")
+        headings = [h[1] for h in _structure(note.split("\n")) if h]
+        self.assertEqual(headings, ["notes"], "the value escaped its fence")
+        r = run_tool("vault_to_rdf.py", vault, "--out-dir", self.tmp / "out", cwd=self.tmp)
+        from rdflib import Graph, URIRef
+        g = Graph().parse(self.tmp / "out" / "data.ttl")
+        vals = [str(o) for o in g.objects(URIRef("https://example.org/data/n"),
+                                          URIRef("https://example.org/schema/notes"))]
+        self.assertEqual(vals, [hostile])
+
+    def test_hostile_term_name_never_becomes_heading(self):
+        # a coined term name carrying a newline and a heading marker: it must
+        # stay an inert quoted key, never a heading line in the body
+        rdf = self.tmp / "g.nt"
+        rdf.write_text(f'<https://example.org/data/n> <{RDF_TYPE}> <https://example.org/schema/Thing> .\n'
+                       '<https://example.org/data/n> <https://evil.example/ns/x%0A%23%20evil> '
+                       '"line one\\nline two" .\n', encoding="utf-8")
+        r = run_tool("rdf_to_vault.py", self.tmp / "vault", rdf, cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        note = next((self.tmp / "vault").rglob("n.md")).read_text(encoding="utf-8")
+        self.assertEqual([h for h in _structure(note.split("\n")) if h], [])
 
 
 if __name__ == "__main__":
