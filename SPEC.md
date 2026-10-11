@@ -21,6 +21,7 @@ The key words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used in the se
 - **Frontmatter**: the YAML block delimited by `---` at the top of a note. Read as YAML-LD, it is the note's triples.
 - **Context**: the shared JSON-LD `@context` that maps short field names and prefixes to IRIs for the whole vault. It is conventionally rooted in `context.jsonld`, but **MAY** be composed of several documents: a context value that is an *array* pulls in further context documents by reference (JSON-LD composition), so each ontology can ship its own self-contained context (§4.2).
 - **Vault format**: the resource-per-file representation, namely frontmatter triples (one subject per file) plus a documentation body.
+- **Section reference**: a frontmatter value that points into the note's own body (`"[[#Heading]]"`) so a large or formatted literal can be written as Markdown under a heading and still be a value in the graph (§4.4.2).
 - **Schema layer / instance layer**: definitions (classes, properties, concepts) versus the typed notes that conform to them.
 - **Source of truth**: the serialization a given deployment designates as authoritative for an asset (Markdown, Turtle, or another). This is a per-asset, per-deployment choice, not fixed by this format.
 - **Generated artifact**: whichever serialization a deployment derives from the source of truth (e.g. a `.ttl` exported from Markdown, or Markdown generated from a hand-maintained `.ttl`). It is treated as read-only *in that deployment*, in whichever direction generation runs.
@@ -42,6 +43,7 @@ Ontologies/
     Properties/
       requiresIngredient.md        # owl:ObjectProperty
       prepTimeMinutes.md           # owl:DatatypeProperty
+      method.md                    # owl:DatatypeProperty - held as a section reference
 Vocabularies/
   DifficultyLevels/
     context.jsonld                 # the vocabulary's own namespace (@base)
@@ -49,7 +51,7 @@ Vocabularies/
     Beginner.md                    # skos:Concept - topConceptOf declared in frontmatter
     NoCook.md                      # skos:Concept - broader: [[Beginner]] (concept-to-concept)
 Recipes/
-  hummus.md                        # an instance: type: "[[Recipe]]"
+  hummus.md                        # an instance: type: "[[Recipe]]"; method: "[[#Method]]"
 ```
 
 The root `context.jsonld` carries the cross-cutting core (shared prefixes, the data `@base`, and the structural RDFS/OWL/SKOS terms) and *composes* each ontology's and vocabulary's own context by reference. Every ontology or vocabulary ships a `context.jsonld` beside its notes that declares its own namespace (`@base`) and any domain terms it coins (§4.2); a vocabulary whose predicates are all generic SKOS may declare only its `@base`. The `Classes/` and `Properties/` folders group resources **by kind**, and in their canonical form are flat. A class's place in the `subClassOf` tree (and a concept's place in the `broader`/`narrower` tree) is declared in its frontmatter and nowhere else; nesting a schema file inside a folder named after its parent is organisation, not modelling (§5.2). Folders never shape identity either: every note mints from its file name alone (§4.5), and placement travels through `vld:path` on export (§5.4).
@@ -129,6 +131,7 @@ When composing contexts, a tool **SHOULD** warn if a later context redefines a t
 | Type declaration              | wiki link to the class      | `type: "[[Recipe]]"`                           |
 | Object property (→ resource)  | wiki link                   | `requiresIngredient: "[[Chickpeas]]"`          |
 | Datatype property (→ literal) | plain scalar                | `prepTimeMinutes: 25`, `published: 2026-06-17` |
+| Large or formatted literal    | section reference (§4.4.2)  | `method: "[[#Method]]"`                        |
 | External-vocabulary term (in a **value**) | prefixed CURIE  | `subClassOf: [ sdo:Recipe ]`                   |
 | Field name (the **key**)      | bare short alias, never prefixed | `comment:` not `rdfs:comment:`            |
 
@@ -156,13 +159,60 @@ A wiki link is `[[name]]`, optionally carrying a path (`[[path/to/name]]`), an a
 
 - the **alias** is display-only and **MUST** be ignored for resolution;
 - a **path** disambiguates only: resolution uses the final segment (the note name), and when several participating notes share a name, a tool **SHOULD** use the path to select among them;
-- a **fragment** addresses a location inside a note, not a resource; the graph edge resolves to the note itself, and a tool **MAY** warn that the fragment was discarded.
+- a **fragment** addresses a location inside a note, not a resource. On an IRI-coerced term the graph edge resolves to the note itself, and a tool **MAY** warn that the fragment was discarded; a same-note link with no note name (`[[#Heading]]`) resolves to the note it is written in. On a term that is not IRI-coerced, a same-note link is a **section reference** instead (§4.4.2).
 
 A link resolves to the participating note whose file name equals the link's note name, and the object IRI is that note's identity: its explicit `@id` when declared, its minted IRI otherwise (§4.5). Two participating notes sharing a file name make bare links to that name ambiguous — and, since identity mints from the file name (§4.5), they collide on one IRI unless at least one declares an `@id`; a tool **MUST** warn, and authors **SHOULD** disambiguate with an explicit `@id` (for identity) and a path-qualified link (for the reference). A link that names no participating note is **dangling**: a tool **MUST** flag it (§5.6) and **MAY** still mint an IRI for the missing target in the data namespace so the edge is preserved rather than dropped.
 
 The same grammar governs link *generation*. A tool that writes wiki links (§5.5) **SHOULD** emit a path-qualified link whenever the bare note name is ambiguous among participating notes, so that the link it writes resolves — under the rules above — to the note it means. Generation and resolution are two halves of one contract: whatever one tool emits, the other must resolve back to the same IRI.
 
 A note with no frontmatter, or whose frontmatter lacks `@type`, does **not** participate in the graph; it is an ordinary document. A link from a participating note to such a note is dangling in the sense above, even though the file exists and the link navigates perfectly well in the host tool.
+
+#### 4.4.2 Section references: literal values held in the body
+
+Some values are too large or too structured for a YAML scalar: a SQL query, a code listing, a multi-step method, a table. Written into frontmatter they become one escaped string that nobody can comfortably read or edit; left in the body as prose they never reach the graph. A **section reference** gives such a value both lives. The author writes it as ordinary, fully formatted Markdown under a heading in the body, where a person reads it with syntax highlighting, and the frontmatter points at that heading with a same-note link. On export, the section's content *is* the value.
+
+````markdown
+---
+type: "[[Report]]"
+label: Quarterly revenue by region
+query: "[[#Query]]"
+---
+# Quarterly revenue by region
+Revenue is recognised on invoice date; credit notes are netted in the month issued.
+
+## Query
+```sql
+SELECT region, SUM(amount) AS revenue
+FROM invoices
+GROUP BY region;
+```
+````
+
+With `query` mapped in the context to a term that is not IRI-coerced, this note exports as:
+
+```turtle
+data:quarterly-revenue a ex:Report ;
+    rdfs:label "Quarterly revenue by region" ;
+    ex:query """SELECT region, SUM(amount) AS revenue
+FROM invoices
+GROUP BY region;""" .
+```
+
+The opening paragraph stays documentation (§5.3); only the referenced section becomes a value.
+
+**What counts as a section reference.** A frontmatter value that is exactly a wiki link with no note name and a fragment, `"[[#Heading]]"`, `"[[#Heading#Subheading]]"`, or `"[[#^block-id]]"`, is a *same-note link* (an alias after `|` is display-only and ignored). When the term it is the value of is not IRI-coerced (it carries a datatype coercion, or none), the link is a section reference, and a tool **MUST** replace it with the **section value** of the location it addresses before applying the term's datatype, exactly as for any scalar (§4.3). On an IRI-coerced term the same link is an ordinary edge to the note itself (§4.4.1). In a list, each element is resolved independently.
+
+**Addressing.**
+
+- `[[#H]]` addresses the first ATX heading in the body whose text equals `H`, after trimming whitespace and removing any closing `#` sequence. The section runs from the line after that heading up to, but not including, the next heading of the same or a higher level, or to the end of the note, so deeper subheadings stay inside it. `[[#A#B]]` addresses the first heading `B` within `A`'s section.
+- `[[#^id]]` addresses the block the identifier marks: the run of non-blank lines ending in a line that ends with ` ^id`, or the block immediately before a line holding `^id` alone (the form used after a code block or a table). The marker is not part of the value.
+- A line inside a fenced code block is never a heading, so a `#` comment in a listing cannot end or start a section.
+
+**The section value.** Blank lines are trimmed from both ends of the section. If what remains is exactly one fenced code block, the value is the content of that block, verbatim, without the fence lines; this is what lets a query or a listing export as the code itself. Otherwise the value is the section's Markdown source, verbatim. A fence's info string (`sql` above) is for the reader and the editor's highlighter and carries no meaning in the graph: like every literal's, the value's datatype comes from the context.
+
+**Failure is flagged.** A section reference that addresses no heading or block **MUST** be flagged, and a tool **MUST NOT** emit the link text itself as the value. A tool **SHOULD** warn when several headings match, since only the first is used. A fragment link that names a note (`"[[Other#Heading]]"`) on a term that is not IRI-coerced is **not** a section reference: a value belongs to its own note's subject, so a tool **MUST NOT** read another note's body to produce it, and **SHOULD** flag the link.
+
+**When to use one.** A section reference suits content that is a *value of this note* and has no identity of its own: a query, a method, a long definition. Content that is a resource in its own right, with its own type, properties or inbound links, belongs in a separate note linked as an object property. A host editor that understands same-note links (Obsidian does) renders the frontmatter value as a link that jumps to the section, so the reference is navigable as well as machine-readable.
 
 ### 4.5 Identity
 
@@ -283,11 +333,11 @@ Use for the principal ingredients a dish cannot be made without;
 optional garnishes SHOULD be modelled with a separate, weaker property.
 ```
 
-The **frontmatter** is the formal triples (short field names, resolved through the context). The **body** is documentation, and it is deliberately **not converted to RDF**; only the frontmatter is. The division is intentional, and it mirrors how a webpage using JSON-LD puts only its most relevant metadata in the structured block while the article text stays in the HTML: the graph carries the structured facts, the body carries the prose around them.
+The **frontmatter** is the formal triples (short field names, resolved through the context). The **body** is documentation, and it is deliberately **not converted to RDF**; only the frontmatter is. The one exception is opt-in and explicit: a section the frontmatter names as a value through a section reference (§4.4.2) is read as that value, and nothing else in the body is. The division is intentional, and it mirrors how a webpage using JSON-LD puts only its most relevant metadata in the structured block while the article text stays in the HTML: the graph carries the structured facts, the body carries the prose around them.
 
 This body is not dead weight. It is valuable context for **both human readers and LLMs**: the narrative, examples, edge cases, and rationale that a triple store has no room for but a model reading the file consumes directly. An LLM working in the vault reads the body as readily as the frontmatter, so a definition's nuance lives exactly where the reasoning happens. If a fact belongs in the graph, it goes in the frontmatter (e.g. `comment:` → `rdfs:comment`); if it is explanatory prose for a reader, it stays in the body. Notes **MAY** therefore carry as much narrative as their authors like, with no cost to the formal model and no leakage into it.
 
-A consequence: the body lives only in the Markdown serialization and does not survive a roundtrip through Turtle. See §5.6 for what that means for fidelity.
+A consequence: the body lives only in the Markdown serialization and does not survive a roundtrip through Turtle, apart from referenced sections, which travel as the values they are. See §5.6 for what that means for fidelity.
 
 ### 5.4 Forward direction: Vault → RDF (export)
 
@@ -295,7 +345,7 @@ An export tool walks the vault and emits Turtle. The transform is mechanical:
 
 1. Walk every `.md` file and read its frontmatter.
 2. Resolve each short frontmatter field to its full predicate via the (composed) context.
-3. Convert each `[[Wiki link]]` to a full URI by resolving the target note's own identity.
+3. Convert each `[[Wiki link]]` to a full URI by resolving the target note's own identity, except a section reference on a term that is not IRI-coerced, which is replaced by its section value (§4.4.2).
 4. Read `subClassOf` / `subPropertyOf` / `broader` from frontmatter (wiki links), like any other predicate; folder placement is ignored for *hierarchy*.
 5. Decide each note's **layer from its folder**: notes under `Ontologies/` and `Vocabularies/` are the schema layer, everything else is the instance layer (§3, §5.1).
 6. Mint each subject per §4.5 (non-IRI-safe characters percent-encoded): the **file name alone**, without `.md`, against the governing `@base` — a schema note's ontology/vocabulary base (a *scoped base per ontology*: `https://example.org/culinary#` for Culinary, `https://example.org/difficulty#` for Difficulty Levels), an instance note's nearest data context base. Folders never enter any IRI. A note with an explicit `id` mints as that absolute IRI, verbatim.
@@ -312,7 +362,7 @@ cul:Recipe a owl:Class ;
     rdfs:subClassOf cul:CreativeWork , sdo:Recipe .
 ```
 
-and the instance at `Recipes/hummus.md` (data layer) reaches across into the Culinary and Difficulty namespaces — minted from its file name, with its shelf location travelling as `vld:path`:
+and the instance at `Recipes/hummus.md` (data layer) reaches across into the Culinary and Difficulty namespaces — minted from its file name, with its shelf location travelling as `vld:path`, and its `method` section exported as a value (§4.4.2):
 
 ```turtle
 @prefix cul:  <https://example.org/culinary#> .
@@ -323,6 +373,9 @@ data:hummus a cul:Recipe ;
     cul:requiresIngredient data:Chickpeas ;
     cul:difficulty diff:Beginner ;
     cul:prepTimeMinutes 25 ;
+    cul:method """1. Blend the drained chickpeas with tahini and lemon juice until smooth.
+2. Add garlic and salt; loosen with a little cold water.
+3. Serve drizzled with olive oil.""" ;
     vld:path "Recipes/hummus.md" .
 ```
 
@@ -334,8 +387,8 @@ This is the direction taken both when importing foreign RDF and when **Turtle is
 
 1. one subject ⇒ one `.md` file, placed by inverting §4.5's minting. A subject carrying a `vld:path "<path>.md"` triple is written to exactly that path (relative to the folder of the context whose `@base` its path was recorded against), and the triple is **consumed** — it never appears in frontmatter, because on the vault side the path is simply where the file sits. An instance IRI that extends a known `@base` names the file — `<base>hummus` ⇒ `hummus.md`, at the source path when one travels, at the context folder's root otherwise. An IRI that extends no known base cannot be reproduced by name-based minting, so the note gets it as an explicit `id` (the full absolute IRI, §4.5). A schema subject lands in the flat `Classes/` or `Properties/` folder under its namespace's ontology folder; the localname ⇒ the file name. Names are percent-**decoded**: an ingester **SHOULD** reverse the encoding of §4.5 when choosing file names, so `Red%20Lentil%20Soup` becomes `Red Lentil Soup.md` and mints back to the identical IRI without an explicit `id`;
 2. `rdfs:subClassOf` / `rdfs:subPropertyOf` / `skos:broader` / `skos:topConceptOf` ⇒ an explicit `subClassOf` / `subPropertyOf` / `broader` / `topConceptOf` frontmatter field whose values are `[[Wiki links]]` — frontmatter is the only carrier of hierarchy (§5.2) — and placement is the flat form of §5.1 unless a `vld:path` path or an existing note dictates otherwise (an ingester **MAY** offer richer organisational layouts as a convenience, §5.2; the exported source path preserves whatever it builds);
-3. every other predicate, including `rdfs:comment`, ⇒ a short frontmatter field (added to the context if new); an IRI-valued object ⇒ a `[[Wiki link]]` **when the IRI is a note in the vault** (a subject this ingest is materialising, or one an existing note claims via `@id`), and a prefixed CURIE otherwise, exactly as §4.3 places external-vocabulary terms in values (`subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`); literals ⇒ scalars (datatypes supplied by the context);
-4. the body is **not** populated from the graph. It is left for human- or model-authored prose, so on a pure ingest it starts empty; only the frontmatter is round-tripped (§5.3).
+3. every other predicate, including `rdfs:comment`, ⇒ a short frontmatter field (added to the context if new); an IRI-valued object ⇒ a `[[Wiki link]]` **when the IRI is a note in the vault** (a subject this ingest is materialising, or one an existing note claims via `@id`), and a prefixed CURIE otherwise, exactly as §4.3 places external-vocabulary terms in values (`subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`); literals ⇒ scalars (datatypes supplied by the context). A literal containing a line break **MAY** instead be written as a section reference (§4.4.2): a section appended to the body and a same-note link in frontmatter. Whatever form the section takes, it **MUST** yield the identical value when read back under §4.4.2; a fenced code block whose fence is longer than any run of backticks in the value always does, and is **RECOMMENDED** for a newly written section. When the existing note already holds the term as a section reference, the ingester **MUST** keep that reference and rewrite only the content of the section it addresses, and only when the value differs;
+4. the body is otherwise **not** populated from the graph. It is left for human- or model-authored prose, so on a pure ingest it starts empty apart from any sections written under step 3; only the frontmatter and the sections it references are round-tripped (§5.3).
 
 The frontmatter rules are symmetric on purpose: the same correspondences read in either direction. The body is the one asymmetry: it is born in Markdown and has no RDF counterpart to ingest from.
 
@@ -349,7 +402,7 @@ RDF (Turtle)              Markdown files (frontmatter triples + body docs)
 
 **Neither side is the privileged original.** The frontmatter and the Turtle are two serializations of the same graph; a deployment names one of them the source of truth (§5.4 and §5.5), and the other is the generated, read-only face. Fidelity is a property of the *graph*, not of either file. A roundtrip is faithful for everything the field-naming contract can express: types, labels, comments, domain and range, sub-class and sub-property, and any context-mapped predicate. **File placement round-trips too**: identity carries no location (§4.5), so any note not at its reconstructable default spot travels with a `vld:path` triple — a triple that exists only on the RDF side, materialising on export and dissolving back into the file's location on ingest. A construct with no short-name mapping is **out of scope** until it is added to the context, and a conforming tool **MUST** flag such a construct rather than silently drop it. This incompleteness is recoverable: extend the context and the construct becomes first-class.
 
-The **body is the one deliberate asymmetry**. It carries no triples, so it has no representation in Turtle and does not survive a Markdown → RDF → Markdown roundtrip. That is by design (§5.3): the body is enrichment for human and machine readers attached to the Markdown serialization, not part of the graph being round-tripped. A deployment that keeps Turtle as its source of truth therefore treats the Markdown bodies as first-class, vault-resident content that the `.ttl` neither holds nor overwrites on regeneration.
+The **body is the one deliberate asymmetry**. It carries no triples, so it has no representation in Turtle and does not survive a Markdown → RDF → Markdown roundtrip. Sections named by section references (§4.4.2) are the exception: they *are* frontmatter values, so they round-trip with the graph. The value survives exactly; the heading it sat under and the prose around it are body, and survive only where the ingester preserves the existing note. That is by design (§5.3): the body is enrichment for human and machine readers attached to the Markdown serialization, not part of the graph being round-tripped. A deployment that keeps Turtle as its source of truth therefore treats the Markdown bodies as first-class, vault-resident content that the `.ttl` neither holds nor overwrites on regeneration.
 
 ## 6. Conformance
 
@@ -364,7 +417,8 @@ A note participates correctly in linked data when:
 - [ ] for definitions: hierarchy lives only in frontmatter (`subClassOf` / `subPropertyOf` / `broader` / `topConceptOf` wiki links); folder nesting in the schema tree carries no hierarchy and never changes identity — non-canonical placement round-trips via `vld:path` (§5.2, §4.5, §5.4).
 - [ ] on a roundtrip-face export, a note whose location the graph cannot reconstruct (a pinned note, an instance not directly in its governing context's folder, or schema placement away from the flat form of §5.1) carries a `vld:path "<path>.md"` triple — omittable only in a query-only, read-only export (§5.4); on ingest that triple is consumed into file placement and **never** written into frontmatter (§5.5).
 - [ ] the generated face (whichever serialization a deployment derives: the `.ttl` when Markdown is source, the Markdown when Turtle is source) is treated as read-only; edits go to the source of truth and are regenerated.
-- [ ] body text is never emitted as RDF, and a generator that produces the Markdown face **MUST** preserve existing bodies rather than clobber them on regeneration.
+- [ ] body text is never emitted as RDF except as the value of a section reference, and a generator that produces the Markdown face **MUST** preserve existing bodies rather than clobber them on regeneration, rewriting only the referenced sections whose values changed (§4.4.2, §5.5).
+- [ ] a section reference (`"[[#Heading]]"`, `"[[#A#B]]"`, `"[[#^id]]"` on a term that is not IRI-coerced) exports as its section value: the code inside a section that is exactly one fenced block, the section's Markdown otherwise; an unresolvable reference is flagged and never exported as the link text (§4.4.2).
 
 A tool **MAY** implement one direction only: it is a **conforming exporter** when it implements §5.4, and a **conforming ingester** when it implements §5.5, in each case honouring §5.6 (flag unmapped constructs, do not drop; preserve bodies) and the link-resolution rules of §4.4.1. A **conforming roundtrip tool** implements both directions as inverses and privileges neither serialization as source of truth.
 
@@ -426,7 +480,8 @@ A complete, copyable vault with one ontology, one vocabulary, and one instance.
     "xsd": "http://www.w3.org/2001/XMLSchema#",
     "requiresIngredient": { "@id": "cul:requiresIngredient", "@type": "@id" },
     "difficulty":         { "@id": "cul:difficulty",         "@type": "@id" },
-    "prepTimeMinutes":    { "@id": "cul:prepTimeMinutes",    "@type": "xsd:integer" }
+    "prepTimeMinutes":    { "@id": "cul:prepTimeMinutes",    "@type": "xsd:integer" },
+    "method":             { "@id": "cul:method" }
   }
 }
 ```
@@ -491,16 +546,22 @@ tags: [ skos-concept, DifficultyLevels ]
 # No-Cook
 ```
 
-**`Recipes/hummus.md`**
-```yaml
+**`Recipes/hummus.md`**: `method` is a section reference (§4.4.2), so the steps are written as Markdown and exported as the value of `cul:method`.
+```markdown
 ---
 type: "[[Recipe]]"
 requiresIngredient: "[[Chickpeas]]"
 difficulty: "[[Beginner]]"
 prepTimeMinutes: 25
+method: "[[#Method]]"
 ---
 # Hummus
 A smooth purée of chickpeas, tahini, lemon, and garlic.
+
+## Method
+1. Blend the drained chickpeas with tahini and lemon juice until smooth.
+2. Add garlic and salt; loosen with a little cold water.
+3. Serve drizzled with olive oil.
 ```
 
 A handful of notes, a composed context, no server, and a graph you can read with your eyes or export to Turtle on demand.

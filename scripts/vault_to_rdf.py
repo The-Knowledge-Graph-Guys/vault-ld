@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import json
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -363,6 +364,189 @@ def wikilink_target(token: str) -> str:
     return inner.strip()
 
 
+# ---------------------------------------------------------------------------
+# Section references (SPEC §4.4.2): a literal-valued term whose value is a
+# same-note fragment link — [[#Heading]], [[#Heading#Sub]], [[#^block-id]] —
+# takes its value from that location in the note's own body. The body is read
+# only when a note carries such a link, under its own size cap: it is
+# untrusted content exactly as the frontmatter is.
+# ---------------------------------------------------------------------------
+MAX_NOTE_BYTES = 8 << 20  # 8 MiB
+
+SECTION_LINK_RE = re.compile(r"^\[\[#([^\]|]+?)\s*(?:\|[^\]]*)?\]\]$")
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+ATX_RE = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$")
+BLOCK_ID_RE = re.compile(r"^[A-Za-z0-9-]+$")
+
+
+def section_fragment(token) -> str | None:
+    """The fragment of a same-note fragment link, or None.
+
+    [[#Method]] -> 'Method'; [[#A#B]] -> 'A#B'; [[#^q1]] -> '^q1'.
+    A link that names a note ([[Other#Method]]) is not a same-note link."""
+    if not isinstance(token, str):
+        return None
+    m = SECTION_LINK_RE.match(token.strip())
+    return m.group(1).strip() if m else None
+
+
+def read_body(path: Path) -> str | None:
+    """The note's body (everything after the frontmatter), or None when the
+    note exceeds MAX_NOTE_BYTES. The cap binds before the file is in memory."""
+    try:
+        if path.stat().st_size > MAX_NOTE_BYTES:
+            return None
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    if text.startswith("---"):
+        parts = text.split("---", 2)
+        return parts[2] if len(parts) == 3 else ""
+    return text
+
+
+def _heading(line: str) -> tuple[int, str] | None:
+    """(level, text) for an ATX heading line, closing #-sequence removed."""
+    m = ATX_RE.match(line)
+    if not m:
+        return None
+    text = (m.group(2) or "").strip()
+    text = re.sub(r"(?:^|[ \t]+)#+$", "", text).strip()
+    return len(m.group(1)), text
+
+
+def _structure(lines: list[str]) -> list[tuple[int, str] | None]:
+    """Per line: its heading (level, text), or None. Fence-aware — a '#' line
+    inside a fenced code block (a shell comment, say) is never a heading."""
+    out: list[tuple[int, str] | None] = []
+    fence: str | None = None
+    for line in lines:
+        if fence is None:
+            m = FENCE_RE.match(line)
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                fence = m.group(1)
+                out.append(None)
+                continue
+            out.append(_heading(line))
+        else:
+            if _closes(line, fence):
+                fence = None
+            out.append(None)
+    return out
+
+
+def heading_span(lines: list[str], path: list[str]) -> tuple[int, int] | None:
+    """Locate [[#A#B]]: (index of heading B's line, end index exclusive of
+    its section), searching for each successive heading inside the previous
+    one's section. The first match wins, as in Obsidian."""
+    heads = _structure(lines)
+    lo, hi = 0, len(lines)
+    found: tuple[int, int] | None = None
+    for name in path:
+        found = None
+        for i in range(lo, hi):
+            h = heads[i]
+            if h and h[1] == name:
+                end = hi
+                for j in range(i + 1, hi):
+                    if heads[j] and heads[j][0] <= h[0]:
+                        end = j
+                        break
+                found = (i, end)
+                break
+        if found is None:
+            return None
+        lo, hi = found[0] + 1, found[1]
+    return found
+
+
+def block_span(lines: list[str], block_id: str) -> tuple[int, int, int] | None:
+    """Locate [[#^id]]: (start, end exclusive, marker line index). The block
+    is the run of non-blank lines ending at a line that ends ' ^id', or the
+    block immediately before a line holding '^id' alone (the form used after
+    a code block or a table)."""
+    if not BLOCK_ID_RE.match(block_id):
+        return None
+    heads = _structure(lines)
+    marker = "^" + block_id
+    for i, line in enumerate(lines):
+        s = line.rstrip()
+        if s.strip() == marker:
+            end = i
+            while end > 0 and not lines[end - 1].strip():
+                end -= 1
+            if end == 0:
+                return None
+            if FENCE_RE.match(lines[end - 1]):   # closing fence: walk to its opener
+                close = FENCE_RE.match(lines[end - 1]).group(1)
+                start = end - 2
+                while start >= 0:
+                    m = FENCE_RE.match(lines[start])
+                    if m and m.group(1)[0] == close[0] and len(m.group(1)) <= len(close):
+                        return start, end, i
+                    start -= 1
+                return None
+            start = end - 1
+            while start > 0 and lines[start - 1].strip() and not heads[start - 1]:
+                start -= 1
+            return start, end, i
+        if s.endswith(" " + marker):
+            start = i
+            while start > 0 and lines[start - 1].strip() and not heads[start - 1]:
+                start -= 1
+            return start, i + 1, i
+    return None
+
+
+def _closes(line: str, fence: str) -> bool:
+    """True when `line` closes a code block opened with `fence`."""
+    m = FENCE_RE.match(line)
+    return bool(m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
+                and not m.group(2).strip())
+
+
+def single_fence(lines: list[str]) -> list[str] | None:
+    """The inner lines when `lines` is exactly one fenced code block, else None."""
+    m = FENCE_RE.match(lines[0]) if lines else None
+    if not m or (m.group(1)[0] == "`" and "`" in m.group(2)):
+        return None
+    for j in range(1, len(lines)):
+        if _closes(lines[j], m.group(1)):
+            return lines[1:j] if j == len(lines) - 1 else None
+    return None
+
+
+def section_text(lines: list[str]) -> str:
+    """The value a section yields (SPEC §4.4.2): blank lines trimmed from both
+    ends; a section that is exactly one fenced code block yields the code
+    inside it, verbatim; anything else yields its Markdown source, verbatim."""
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+    while lines and not lines[-1].strip():
+        lines = lines[:-1]
+    inner = single_fence(lines)
+    return "\n".join(inner if inner is not None else lines)
+
+
+def section_value(body: str, fragment: str) -> str | None:
+    """Resolve a section reference's fragment against a note body (SPEC
+    §4.4.2); None when the fragment addresses nothing."""
+    lines = body.split("\n")
+    if fragment.startswith("^"):
+        span = block_span(lines, fragment[1:])
+        if span is None:
+            return None
+        start, end, mark = span
+        block = list(lines[start:end])
+        if mark < end:  # inline marker: strip ' ^id' from its line
+            block[mark - start] = block[mark - start].rstrip()[: -len(fragment) - 1].rstrip()
+        return section_text(block)
+    span = heading_span(lines, [p.strip() for p in fragment.split("#")])
+    if span is None:
+        return None
+    return section_text(lines[span[0] + 1: span[1]])
+
+
 def wikilink_name(token: str) -> str:
     """Reduce a wiki link to its bare note name (SPEC §4.4.1): the path, when
     present, only selects among same-named notes; the name is the final segment."""
@@ -567,13 +751,17 @@ def main() -> int:
                                     f"type for {path.parent.name}/ "
                                     f"(expected one of {sorted(expected)})")
 
-    def resolve_iri(token: str) -> URIRef:
+    def resolve_iri(token: str, subj: URIRef | None = None) -> URIRef:
         """Resolve a wiki link or CURIE/IRI value to a full IRI (SPEC §4.4.1):
         a path-qualified link selects among same-named notes by matching its
         path against the note's vault-relative path, right-aligned on segment
-        boundaries (the way Obsidian's shortest-sufficient-path links work)."""
+        boundaries (the way Obsidian's shortest-sufficient-path links work).
+        A same-note fragment link ([[#Heading]]) names no note: the edge
+        resolves to the note it is written in, `subj`."""
         if is_wikilink(token):
             target = wikilink_target(token)
+            if not target and subj is not None:
+                return subj
             name = target.rsplit("/", 1)[-1]
             if "/" in target:
                 hits = {iri for rel, iri in subject_by_relpath.items()
@@ -615,6 +803,7 @@ def main() -> int:
         # file stems (SPEC §4.5), so every unpinned instance compacts.
         g.bind("data", root_base)
 
+    bodies: dict[Path, str | None] = {}   # read lazily, only for section references
     for path, fm, layer, subj, expected in notes:
         g = g_schema if layer == "schema" else g_data
 
@@ -659,8 +848,31 @@ def main() -> int:
 
             for v in values:
                 if coercion == "@id":
-                    g.add((subj, pred, resolve_iri(str(v))))
-                elif coercion:
+                    g.add((subj, pred, resolve_iri(str(v), subj)))
+                    continue
+                # A literal-valued term: a same-note fragment link is a section
+                # reference (SPEC §4.4.2) — the value is that section's content.
+                if (frag := section_fragment(v)) is not None:
+                    if path not in bodies:
+                        bodies[path] = read_body(path)
+                    if bodies[path] is None:
+                        warnings.append(f"{path.name}: note exceeds {MAX_NOTE_BYTES} bytes "
+                                        f"or is unreadable — section reference "
+                                        f"'{key}: [[#{frag}]]' not resolved, value skipped")
+                        continue
+                    text = section_value(bodies[path], frag)
+                    if text is None:
+                        warnings.append(f"{path.name}: section reference '{key}: [[#{frag}]]' "
+                                        f"addresses no heading or block in the note "
+                                        f"— value skipped (SPEC §4.4.2)")
+                        continue
+                    v = text
+                elif is_wikilink(v) and "#" in str(v):
+                    warnings.append(f"{path.name}: '{key}: {str(v).strip()}' names a note "
+                                    f"— only a same-note link ([[#...]]) "
+                                    f"is a section reference (SPEC §4.4.2); "
+                                    f"exported as a plain string")
+                if coercion:
                     dt = URIRef(ctx.expand_curie(coercion))
                     g.add((subj, pred, Literal(v, datatype=dt)))
                 else:

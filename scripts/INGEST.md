@@ -121,6 +121,18 @@ The correspondences of §5.5, read right-to-left from the export:
   coined term's definition;
 - multi-valued predicates (and terms declared `"@container": "@set"`) become
   flow lists: `subClassOf: [ "[[CreativeWork]]", sdo:Recipe ]`;
+- a single **multi-line literal** becomes a **section reference** (SPEC
+  §4.4.2): a `## term` section is appended to the body holding the value in a
+  code fence longer than any backtick run inside it, so the value reads back
+  byte for byte, and frontmatter gets `term: "[[#term]]"`. If the note
+  already holds the term as a section reference, that section is rewritten in
+  place only when the value changed, keeping its form (a code block keeps its
+  info string, prose stays prose) and touching nothing else in the body. A
+  value already held in a section stays there even when it fits on one line.
+  The heading is taken from the term name only when the name is plain
+  (letters, digits, spaces, `_`, `-`); otherwise the value stays a quoted
+  scalar. A reference to a `^block-id` whose value changed is replaced by a
+  new heading section;
 - hierarchy is **always written explicitly** into frontmatter
   (`subClassOf` / `broader` / `topConceptOf`) — frontmatter is its only
   carrier (SPEC §5.2); with `--nest` the folder layout mirrors it too, but
@@ -134,7 +146,9 @@ The correspondences of §5.5, read right-to-left from the export:
 Per SPEC §5.6 and the conformance rules (§6):
 
 - **bodies are never clobbered** — the frontmatter block is replaced, everything
-  below the closing `---` stays; a freshly ingested note starts with an empty body;
+  below the closing `---` stays, except the content of a referenced section
+  whose value changed (SPEC §4.4.2); a freshly ingested note starts with an
+  empty body, apart from any sections holding multi-line values;
 - **non-context frontmatter keys** (`tags:`, `aliases:`, …) belong to the
   Markdown face, not the graph, and are kept;
 - a **valid explicit `id`** already pinned in a note is kept (one that resolves to the subject's IRI against the governing `@base`).

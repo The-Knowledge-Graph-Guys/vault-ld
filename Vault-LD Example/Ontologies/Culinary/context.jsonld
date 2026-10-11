@@ -6,6 +6,7 @@
 
     "requiresIngredient": { "@id": "cul:requiresIngredient", "@type": "@id" },
     "difficulty":         { "@id": "cul:difficulty",         "@type": "@id" },
-    "prepTimeMinutes":    { "@id": "cul:prepTimeMinutes",    "@type": "xsd:integer" }
+    "prepTimeMinutes":    { "@id": "cul:prepTimeMinutes",    "@type": "xsd:integer" },
+    "method":             { "@id": "cul:method" }
   }
 }
