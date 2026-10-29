@@ -10,7 +10,7 @@ Vault-LD treats a directory of Markdown notes as an RDF graph: each note's YAML 
 
 ![Vault-LD](images/Vault-LD.png)
 
-This document specifies that roundtrip in two inverse halves. **§4, frontmatter as a knowledge graph,** shows how the YAML at the top of a note becomes RDF triples linked to ontologies and vocabularies. **§5, the RDF ⇄ vault-format roundtrip,** shows how any RDF graph is projected into this directory-of-files shape and exported back out with full fidelity. The remaining sections fix terminology (§2), show the directory structure at a glance (§3), list the conformance criteria (§6), and relate the format to existing standards (§7).
+This document specifies that roundtrip in two inverse halves. **§4, frontmatter as a knowledge graph,** shows how the YAML at the top of a note becomes RDF triples linked to ontologies and vocabularies. **§5, the RDF ⇄ vault-format roundtrip,** shows how any RDF graph is projected into this directory-of-files shape and exported back out with full fidelity. The remaining sections fix terminology (§2), show the directory structure at a glance (§3), list the conformance criteria (§6), relate the format to existing standards (§7), and define its media type (§8).
 
 ## 2. Terminology
 
@@ -381,6 +381,39 @@ This format does not invent a data model. It composes existing ones and chooses 
 - **Agent-maintained Markdown wikis** (the pattern popularised by Karpathy's "LLM wiki" sketch and its many implementations) demonstrate the same substrate from the tooling side: persistent, interlinked notes that an LLM reads, extends, and lints, governed by prose conventions in a schema document. Vault-LD supplies what prose conventions cannot enforce: formal types, declared hierarchy, and a context that makes every field machine-resolvable, so the wiki's structure can be validated and queried rather than trusted.
 
 The format's only original move is insisting that all of these share one directory and one effective context (composed from however many documents) so that a graph can be read, edited, and handed on without any of them being privileged over the others.
+
+## 8. Media Type
+
+A Vault-LD note is a Markdown document, so it is identified as a **variant of `text/markdown`** ([RFC 7763](https://www.rfc-editor.org/rfc/rfc7763)), registered as `Vault-LD` in the IANA *Markdown Variants* registry:
+
+```
+text/markdown; charset=UTF-8; variant=Vault-LD
+```
+
+- `charset` is required by `text/markdown`; Vault-LD notes **MUST** be UTF-8, so its value is always `UTF-8`.
+- The `variant` value is matched case-insensitively; `Vault-LD` is its canonical spelling.
+- The file extension is `.md`.
+- Because every Vault-LD note is also valid Markdown, a recipient that does not know the variant still receives a readable document. It just won't treat the frontmatter as triples.
+
+**One note served on its own.** A note carries no `@context` (§4.2), so a server that returns a single note over HTTP **MUST** say where its context is. It does this with the JSON-LD context link relation, as JSON-LD 1.1 does for plain JSON documents. It **SHOULD** also link the Vault-LD profile:
+
+```
+Content-Type: text/markdown; charset=UTF-8; variant=Vault-LD
+Link: <https://schema.example.com/context.jsonld>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json",
+      <https://github.com/The-Knowledge-Graph-Guys/vault-ld>; rel="profile"
+```
+
+The linked context plays the role of the vault's root `context.jsonld`: its `@base` is the base the note mints under (§4.5). A note whose identity that base cannot reproduce **MUST** carry an explicit `id`. A server **SHOULD** serve the note for `Accept: text/markdown` with or without the variant parameter. It **SHOULD** answer `406 Not Acceptable` when a client explicitly asks for a different variant.
+
+**A vault is not one media type.** A vault is a directory, so a vault transferred as one file (for example a zip archive) is identified by its archive type. This media type covers a single note.
+
+**Security considerations.** A note is text with no active content, but processors **MUST** treat it as untrusted input:
+- **YAML:** parse the frontmatter with a safe loader that rejects language-specific tags. A processor **SHOULD** reject YAML aliases, which can be used for exponential expansion. The reference tools do both.
+- **Remote contexts:** resolving a remote `@context` (from the `Link` header or a composed context) makes network requests that a document's author controls. A processor **SHOULD** fetch remote contexts only from origins it trusts, and **MAY** refuse to fetch at all. The reference exporter reads only local context files, and the reference ingester disables network access unless `--unsafe-allow-network` is given.
+- **Markdown bodies:** a body may contain raw HTML and links. Render bodies with the same sanitisation as any untrusted Markdown.
+- **Wiki links:** a wiki link resolves to a note name, never to a filesystem path outside the vault (§4.4.1). A processor **MUST NOT** follow a link to a file outside the vault root.
+
+The registration template submitted to IANA is kept in [`iana/`](iana/README.md).
 
 ## Appendix A: A Minimal Example Bundle
 
